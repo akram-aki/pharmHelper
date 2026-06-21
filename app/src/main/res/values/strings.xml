@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Box Detector</string>
+    <string name="camera_permission_denied">Camera permission is required for this app to work.</string>
+</resources>

@@ -1,0 +1,28 @@
+# Build
+**/build/
+.gradle/
+local.properties
+*.iml
+.idea/
+.cxx/
+captures/
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Secrets — these must never be committed
+google-services.json
+firebase-key.json
+*-service-account*.json
+keystore.properties
+*.keystore
+*.jks
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
