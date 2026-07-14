@@ -2,7 +2,13 @@ package fr.fbing.boxdetector
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -20,8 +26,13 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var previewView: PreviewView
     private lateinit var overlay: BoxOverlay
+    private lateinit var ocrText: TextView
     private lateinit var detector: BoxDetector
+    private lateinit var textReader: TextReader
     private lateinit var cameraExecutor: ExecutorService
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val clearOcr = Runnable { ocrText.visibility = View.GONE }
 
     private val requestPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -40,8 +51,10 @@ class MainActivity : AppCompatActivity() {
 
         previewView = findViewById(R.id.preview_view)
         overlay = findViewById(R.id.box_overlay)
+        ocrText = findViewById(R.id.ocr_text)
 
         detector = BoxDetector(this)
+        textReader = TextReader()
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         val granted = ContextCompat.checkSelfPermission(
@@ -74,17 +87,46 @@ class MainActivity : AppCompatActivity() {
 
     private fun analyzeFrame(image: ImageProxy) {
         try {
-            val bitmap = image.toBitmap()
-            val result = detector.detect(bitmap, image.imageInfo.rotationDegrees)
+            val upright = image.toUprightBitmap()
+            val result = detector.detect(upright, 0)
             runOnUiThread { overlay.setDetections(result) }
+            maybeRunOcr(upright, result)
         } finally {
             image.close()
         }
     }
 
+    private fun ImageProxy.toUprightBitmap(): Bitmap {
+        val bitmap = toBitmap()
+        val degrees = imageInfo.rotationDegrees
+        if (degrees % 360 == 0) return bitmap
+        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    private fun maybeRunOcr(upright: Bitmap, result: DetectionResult) {
+        val best = result.detections.maxByOrNull { it.confidence } ?: return
+        if (best.confidence < OCR_CONFIDENCE_THRESHOLD) return
+        textReader.maybeRead(upright, best.box) { text -> showOcrText(text) }
+    }
+
+    private fun showOcrText(text: String) {
+        ocrText.text = text
+        ocrText.visibility = View.VISIBLE
+        mainHandler.removeCallbacks(clearOcr)
+        mainHandler.postDelayed(clearOcr, OCR_CLEAR_MS)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        mainHandler.removeCallbacks(clearOcr)
         cameraExecutor.shutdown()
         detector.close()
+        textReader.close()
+    }
+
+    companion object {
+        private const val OCR_CONFIDENCE_THRESHOLD = 0.70f
+        private const val OCR_CLEAR_MS = 4000L
     }
 }

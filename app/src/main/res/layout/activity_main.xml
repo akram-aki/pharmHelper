@@ -14,4 +14,17 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <TextView
+        android:id="@+id/ocr_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#B3000000"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:padding="16dp"
+        android:maxLines="4"
+        android:ellipsize="end"
+        android:visibility="gone" />
+
 </FrameLayout>
