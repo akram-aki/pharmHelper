@@ -1,15 +1,14 @@
 package fr.fbing.boxdetector
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.View
-import android.widget.TextView
 import android.widget.Toast
+import com.google.android.material.button.MaterialButton
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
@@ -26,13 +25,12 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var previewView: PreviewView
     private lateinit var overlay: BoxOverlay
-    private lateinit var ocrText: TextView
+    private lateinit var viewTextButton: MaterialButton
     private lateinit var detector: BoxDetector
     private lateinit var textReader: TextReader
     private lateinit var cameraExecutor: ExecutorService
 
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val clearOcr = Runnable { ocrText.visibility = View.GONE }
+    @Volatile private var latestText: String = ""
 
     private val requestPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -51,7 +49,13 @@ class MainActivity : AppCompatActivity() {
 
         previewView = findViewById(R.id.preview_view)
         overlay = findViewById(R.id.box_overlay)
-        ocrText = findViewById(R.id.ocr_text)
+        viewTextButton = findViewById(R.id.view_text_button)
+        viewTextButton.setOnClickListener {
+            startActivity(
+                Intent(this, TextActivity::class.java)
+                    .putExtra(TextActivity.EXTRA_TEXT, latestText)
+            )
+        }
 
         detector = BoxDetector(this)
         textReader = TextReader()
@@ -111,15 +115,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showOcrText(text: String) {
-        ocrText.text = text
-        ocrText.visibility = View.VISIBLE
-        mainHandler.removeCallbacks(clearOcr)
-        mainHandler.postDelayed(clearOcr, OCR_CLEAR_MS)
+        latestText = text
+        viewTextButton.visibility = View.VISIBLE
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        mainHandler.removeCallbacks(clearOcr)
         cameraExecutor.shutdown()
         detector.close()
         textReader.close()
@@ -127,6 +128,5 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val OCR_CONFIDENCE_THRESHOLD = 0.70f
-        private const val OCR_CLEAR_MS = 4000L
     }
 }

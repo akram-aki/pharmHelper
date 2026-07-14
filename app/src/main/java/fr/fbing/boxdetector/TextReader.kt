@@ -60,24 +60,61 @@ class TextReader {
             return
         }
         val start = SystemClock.elapsedRealtime()
-        recognizer.process(InputImage.fromBitmap(crop, 0))
+        // The box may carry text in more than one orientation (e.g. a side
+        // panel printed perpendicular to the front), so run a pass per
+        // rotation and merge the lines.
+        recognizeRotations(crop, 0, mutableListOf()) { lines ->
+            val text = mergeLines(lines)
+            val alnum = text.count { it.isLetterOrDigit() }
+            val ms = SystemClock.elapsedRealtime() - start
+            if (alnum >= MIN_ACCEPT_CHARS) {
+                Log.d(TAG, "ocr: $alnum alnum chars, sharpness=%.1f, ${ms}ms".format(sharpness))
+                onText(text)
+            } else {
+                Log.d(TAG, "rejected: $alnum alnum chars, ${ms}ms")
+            }
+            lastOcrAt = SystemClock.elapsedRealtime()
+            inFlight.set(false)
+            crop.recycle()
+        }
+    }
+
+    /** Runs the recognizer once per entry in [ROTATIONS], accumulating raw lines. */
+    private fun recognizeRotations(
+        crop: Bitmap,
+        index: Int,
+        lines: MutableList<String>,
+        onDone: (List<String>) -> Unit
+    ) {
+        if (index >= ROTATIONS.size) {
+            onDone(lines)
+            return
+        }
+        val rotation = ROTATIONS[index]
+        recognizer.process(InputImage.fromBitmap(crop, rotation))
             .addOnSuccessListener { visionText ->
-                val text = visionText.text.trim()
-                val alnum = text.count { it.isLetterOrDigit() }
-                val ms = SystemClock.elapsedRealtime() - start
-                if (alnum >= MIN_ACCEPT_CHARS) {
-                    Log.d(TAG, "ocr: $alnum alnum chars, sharpness=%.1f, ${ms}ms".format(sharpness))
-                    onText(text)
-                } else {
-                    Log.d(TAG, "rejected: $alnum alnum chars, ${ms}ms")
+                visionText.textBlocks.forEach { block ->
+                    block.lines.forEach { lines.add(it.text) }
                 }
             }
-            .addOnFailureListener { Log.w(TAG, "recognition failed", it) }
-            .addOnCompleteListener {
-                lastOcrAt = SystemClock.elapsedRealtime()
-                inFlight.set(false)
-                crop.recycle()
-            }
+            .addOnFailureListener { Log.w(TAG, "pass ${rotation}deg failed", it) }
+            .addOnCompleteListener { recognizeRotations(crop, index + 1, lines, onDone) }
+    }
+
+    /**
+     * Deduplicates lines across rotation passes (the same text can be read in
+     * more than one pass) and drops near-empty garbage from wrong-rotation reads.
+     */
+    private fun mergeLines(lines: List<String>): String {
+        val seen = HashSet<String>()
+        val kept = mutableListOf<String>()
+        for (line in lines) {
+            val trimmed = line.trim()
+            val key = trimmed.filter { it.isLetterOrDigit() }.lowercase()
+            if (key.length < 2) continue
+            if (seen.add(key)) kept.add(trimmed)
+        }
+        return kept.joinToString("\n")
     }
 
     fun close() {
@@ -137,5 +174,7 @@ class TextReader {
         private const val SHARPNESS_MIN = 80f
         private const val SHARPNESS_MAX_SIDE = 160
         private const val MIN_ACCEPT_CHARS = 4
+        // 0 = as-detected, 90/270 = text printed perpendicular to the main label.
+        private val ROTATIONS = intArrayOf(0, 90, 270)
     }
 }
