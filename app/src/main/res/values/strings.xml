@@ -12,6 +12,9 @@
     <string name="no_text_yet">No text has been extracted yet. Point the camera at a box and hold steady.</string>
     <string name="field_name">Médicament</string>
     <string name="field_dosage">Dosage</string>
+    <string name="field_cond">Conditionnement</string>
+    <string name="field_forme">Forme</string>
+    <string name="field_choose">Choisissez —</string>
     <string name="field_ppa">PPA</string>
     <string name="field_fab_date">Date de fabrication</string>
     <string name="field_exp_date">Date de péremption</string>

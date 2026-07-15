@@ -47,23 +47,12 @@
                     android:textSize="20sp"
                     android:textStyle="bold"
                     android:textIsSelectable="true"
-                    android:paddingBottom="12dp" />
-
-                <TextView
-                    android:id="@+id/name_options_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/name_options_label"
-                    android:textSize="13sp"
-                    android:textAllCaps="true"
-                    android:alpha="0.6"
-                    android:visibility="gone" />
+                    android:paddingBottom="4dp" />
 
                 <RadioGroup
                     android:id="@+id/name_options"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:paddingBottom="12dp"
                     android:visibility="gone" />
 
                 <TextView
@@ -72,7 +61,8 @@
                     android:text="@string/field_dosage"
                     android:textSize="13sp"
                     android:textAllCaps="true"
-                    android:alpha="0.6" />
+                    android:alpha="0.6"
+                    android:paddingTop="8dp" />
 
                 <TextView
                     android:id="@+id/field_dosage_value"
@@ -80,7 +70,59 @@
                     android:layout_height="wrap_content"
                     android:textSize="18sp"
                     android:textIsSelectable="true"
-                    android:paddingBottom="12dp" />
+                    android:paddingBottom="4dp" />
+
+                <RadioGroup
+                    android:id="@+id/dosage_options"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/field_cond"
+                    android:textSize="13sp"
+                    android:textAllCaps="true"
+                    android:alpha="0.6"
+                    android:paddingTop="8dp" />
+
+                <TextView
+                    android:id="@+id/field_cond_value"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="18sp"
+                    android:textIsSelectable="true"
+                    android:paddingBottom="4dp" />
+
+                <RadioGroup
+                    android:id="@+id/cond_options"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/field_forme"
+                    android:textSize="13sp"
+                    android:textAllCaps="true"
+                    android:alpha="0.6"
+                    android:paddingTop="8dp" />
+
+                <TextView
+                    android:id="@+id/field_forme_value"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="18sp"
+                    android:textIsSelectable="true"
+                    android:paddingBottom="4dp" />
+
+                <RadioGroup
+                    android:id="@+id/forme_options"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -88,7 +130,8 @@
                     android:text="@string/field_ppa"
                     android:textSize="13sp"
                     android:textAllCaps="true"
-                    android:alpha="0.6" />
+                    android:alpha="0.6"
+                    android:paddingTop="8dp" />
 
                 <TextView
                     android:id="@+id/field_ppa_value"

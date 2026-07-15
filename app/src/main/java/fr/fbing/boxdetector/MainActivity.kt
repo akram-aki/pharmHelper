@@ -278,7 +278,6 @@ class MainActivity : AppCompatActivity() {
                     TextActivity.EXTRA_NAME_OPTION_CONFS,
                     info.nameCandidates.map { it.confidence }.toIntArray()
                 )
-                .putExtra(TextActivity.EXTRA_DOSAGE, info.dosage)
                 .putExtra(TextActivity.EXTRA_PPA, info.ppa)
                 .putExtra(TextActivity.EXTRA_FAB_DATE, info.fabDate)
                 .putExtra(TextActivity.EXTRA_EXP_DATE, info.expDate)

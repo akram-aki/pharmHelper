@@ -9,22 +9,45 @@ import kotlin.math.min
 
 data class NameCandidate(val name: String, val confidence: Int)
 
+/**
+ * One extracted field cross-referenced against the drug database: best value,
+ * its confidence, and up to 3 ranked alternatives for the user to pick from.
+ */
+data class FieldResult(
+    val value: String?,
+    val confidence: Int,           // 0-100; 0 = nothing usable in the OCR text
+    val options: List<String>,     // ranked best-first, ≤3
+    val optionConfidences: List<Int>
+) {
+    /** True when the UI should ask the user to choose. */
+    fun needsChoice(): Boolean =
+        options.size >= 2 &&
+            (confidence < VignetteParser.ACCEPT_CONFIDENCE ||
+                (optionConfidences.getOrNull(1) ?: -1000) >= confidence - 15)
+
+    companion object {
+        val EMPTY = FieldResult(null, 0, emptyList(), emptyList())
+    }
+}
+
 data class VignetteInfo(
     val name: String?,        // best dictionary match, null when below threshold
     val nameConfidence: Int,  // 0-100, of the best match even when rejected
     val nameCandidates: List<NameCandidate>, // plausible matches, best first, ≤3
-    val dosage: String?,      // e.g. "500MG" or "1G/125MG"
+    val dosage: FieldResult,
+    val cond: FieldResult,    // conditionnement, e.g. B/20
+    val forme: FieldResult,   // forme courte, e.g. COMP.
     val ppa: String?,         // e.g. "245.50 DA"
-    val fabDate: String?,     // as printed, e.g. "03/2024"
+    val fabDate: String?,     // normalized MM/YYYY or DD/MM/YYYY
     val expDate: String?,
     val rawText: String
 )
 
 /**
- * Extracts structured vignette fields (medicine name, PPA price, fabrication
- * and expiration dates) from the raw OCR text. The name is fuzzy-matched
- * against the bundled nomenclature (assets/drug_names.txt, derived from the
- * pharmacy STOCK.mdb).
+ * Extracts structured vignette fields from the raw OCR text, cross-referencing
+ * the medication database derived from the pharmacy STOCK.mdb: name against
+ * assets/drug_names.txt, then dosage / conditionnement / forme against the
+ * known variants of the matched medicine (assets/drug_db.tsv via [DrugDb]).
  */
 class VignetteParser(private val context: Context) {
 
@@ -43,17 +66,119 @@ class VignetteParser(private val context: Context) {
         val ppa = extractPpa(lines)
         val (fabDate, expDate) = extractDates(lines)
         val nameResult = extractName(lines)
-        val dosage = extractDosage(lines, nameResult.bestLine)
+        val (dosage, cond, forme) = matchFieldsInternal(lines, nameResult.name)
 
         Log.d(
             TAG,
-            "name=${nameResult.name} conf=${nameResult.confidence} " +
-                "candidates=${nameResult.candidates} dosage=$dosage ppa=$ppa fab=$fabDate exp=$expDate"
+            "name=${nameResult.name} conf=${nameResult.confidence} candidates=${nameResult.candidates} " +
+                "dosage=${dosage.value}(${dosage.confidence}) cond=${cond.value}(${cond.confidence}) " +
+                "forme=${forme.value}(${forme.confidence}) ppa=$ppa fab=$fabDate exp=$expDate"
         )
         return VignetteInfo(
             nameResult.name, nameResult.confidence, nameResult.candidates,
-            dosage, ppa, fabDate, expDate, rawText
+            dosage, cond, forme, ppa, fabDate, expDate, rawText
         )
+    }
+
+    /**
+     * Cross-references dosage / conditionnement / forme for [name] (null =
+     * no matched medicine, OCR-only fallback). Also called by TextActivity
+     * when the user changes the selected name.
+     */
+    fun matchFields(rawText: String, name: String?): Triple<FieldResult, FieldResult, FieldResult> {
+        val lines = rawText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        return matchFieldsInternal(lines, name)
+    }
+
+    private fun matchFieldsInternal(
+        lines: List<String>,
+        name: String?
+    ): Triple<FieldResult, FieldResult, FieldResult> {
+        DrugDb.load(context)
+        val variants = name?.let { DrugDb.variantsFor(it) }.orEmpty()
+        if (variants.isEmpty()) return Triple(fallbackDosage(lines), fallbackCond(lines), FieldResult.EMPTY)
+
+        val dosage = matchField(dosageTokens(lines), variants.map { it.dosage })
+        val cond = matchField(condTokens(lines), variants.map { it.cond })
+        val forme = matchField(formeTokens(lines), variants.map { it.forme })
+        return Triple(dosage, cond, forme)
+    }
+
+    // ------------------------------------------------- Field cross-reference
+
+    /**
+     * Ranks the known values of a field (frequency-weighted) by their best
+     * similarity to any OCR token. With no OCR token everything scores 0 and
+     * frequency alone ranks the options.
+     */
+    private fun matchField(ocrTokens: List<String>, knownValues: List<String>): FieldResult {
+        val freq = knownValues.filter { it.isNotBlank() }.groupingBy { it }.eachCount()
+        if (freq.isEmpty()) return FieldResult.EMPTY
+
+        val scored = freq.entries
+            .map { (known, count) ->
+                val sim = ocrTokens.maxOfOrNull { similarity(it, known) } ?: 0f
+                Triple(known, sim, count)
+            }
+            .sortedWith(
+                compareByDescending<Triple<String, Float, Int>> { it.second }
+                    .thenByDescending { it.third }
+            )
+            .take(MAX_NAME_OPTIONS)
+
+        val best = scored.first()
+        return FieldResult(
+            value = best.first,
+            confidence = (best.second * 100).toInt(),
+            options = scored.map { it.first },
+            optionConfidences = scored.map { (it.second * 100).toInt() }
+        )
+    }
+
+    private fun similarity(a: String, b: String): Float {
+        if (a == b) return 1f
+        val maxLen = max(a.length, b.length)
+        if (maxLen == 0) return 0f
+        return 1f - levenshtein(a, b).toFloat() / maxLen
+    }
+
+    private fun dosageTokens(lines: List<String>): List<String> =
+        lines.flatMap { line ->
+            DOSAGE_FULL.findAll(line).map { it.value.uppercase().replace(Regex("\\s+"), "") }
+        }.distinct()
+
+    private fun condTokens(lines: List<String>): List<String> =
+        lines.flatMap { line ->
+            COND_TOKEN.findAll(line).map { m ->
+                m.value.uppercase()
+                    .replace(Regex("\\s+"), "")
+                    // Common OCR misread of the leading "B".
+                    .replace(Regex("^8"), "B")
+            }
+        }.distinct()
+
+    private fun formeTokens(lines: List<String>): List<String> =
+        lines.flatMap { line -> line.split(Regex("[\\s,;]+")) }
+            .map { normalize(it).replace(".", "") }
+            .filter { it.length >= 3 && it.any { c -> c.isLetter() } }
+            .distinct()
+
+    private fun fallbackDosage(lines: List<String>): FieldResult {
+        for (line in lines) {
+            val m = DOSAGE_FULL.find(line) ?: continue
+            val value = m.value.uppercase().replace(Regex("\\s+"), "")
+            return FieldResult(value, FALLBACK_CONFIDENCE, listOf(value), listOf(FALLBACK_CONFIDENCE))
+        }
+        return FieldResult.EMPTY
+    }
+
+    private fun fallbackCond(lines: List<String>): FieldResult {
+        for (line in lines) {
+            val m = COND_TOKEN.find(line) ?: continue
+            val value = m.value.uppercase().replace(Regex("\\s+"), "").replace(Regex("^8"), "B")
+            return FieldResult(value, FALLBACK_CONFIDENCE, listOf(value), listOf(FALLBACK_CONFIDENCE))
+        }
+        return FieldResult.EMPTY
     }
 
     // ---------------------------------------------------------------- PPA
@@ -76,65 +201,75 @@ class VignetteParser(private val context: Context) {
 
     // --------------------------------------------------------------- Dates
 
-    private fun extractDates(lines: List<String>): Pair<String?, String?> {
-        var fab: String? = null
-        var exp: String? = null
-        val unlabeled = mutableListOf<String>()
-
-        for (line in lines) {
-            for (m in DATE.findAll(line)) {
-                val token = m.value
-                val before = line.substring(0, m.range.first)
-                when {
-                    FAB_LABEL.containsMatchIn(before) -> if (fab == null) fab = token
-                    EXP_LABEL.containsMatchIn(before) -> if (exp == null) exp = token
-                    else -> unlabeled.add(token)
-                }
-            }
-        }
-
-        if (fab == null && exp == null && unlabeled.size == 2) {
-            val sorted = unlabeled.sortedBy { dateKey(it) }
-            fab = sorted[0]
-            exp = sorted[1]
-        } else {
-            if (fab == null && exp != null && unlabeled.size == 1) fab = unlabeled[0]
-            if (exp == null && fab != null && unlabeled.size == 1) exp = unlabeled[0]
-        }
-        return fab to exp
+    private class ParsedDate(val day: Int?, val month: Int, val year: Int) {
+        fun key() = year * 100 + month
+        fun formatted() =
+            if (day != null) "%02d/%02d/%d".format(day, month, year)
+            else "%02d/%d".format(month, year)
     }
-
-    /** Sortable key (year, month) from date strings like 03/2024 or 15/03/24. */
-    private fun dateKey(token: String): Int {
-        val parts = token.split('/', '-', '.')
-        return try {
-            when (parts.size) {
-                2 -> parts[1].toInt() * 100 + parts[0].toInt()          // MM/YYYY
-                3 -> {
-                    val year = parts[2].toInt().let { if (it < 100) it + 2000 else it }
-                    year * 100 + parts[1].toInt()                        // DD/MM/YYYY
-                }
-                else -> 0
-            }
-        } catch (e: NumberFormatException) {
-            0
-        }
-    }
-
-    // -------------------------------------------------------------- Dosage
 
     /**
-     * Prefers a dosage on the line the name was matched from, then falls back
-     * to the first dosage-looking token anywhere. Handles compound dosages
-     * like "1G/125MG".
+     * Every sticker prints dates its own way ("exp : 11-27", "date exp: 5/2027",
+     * "PER. 11/2027"); labels win, otherwise two plausible dates are ordered
+     * chronologically, and a single unlabeled date is assumed to be the
+     * expiration (the date stickers emphasize).
      */
-    private fun extractDosage(lines: List<String>, nameLine: String?): String? {
-        val searchOrder = if (nameLine != null) listOf(nameLine) + lines else lines
-        for (line in searchOrder) {
-            val m = DOSAGE_FULL.find(line) ?: continue
-            return m.value.uppercase().replace(Regex("\\s+"), "")
+    private fun extractDates(lines: List<String>): Pair<String?, String?> {
+        var fab: ParsedDate? = null
+        var exp: ParsedDate? = null
+        val unlabeled = mutableListOf<ParsedDate>()
+
+        for (line in lines) {
+            val taken = mutableListOf<IntRange>()
+            val tokens = mutableListOf<Pair<IntRange, ParsedDate?>>()
+            for (m in DATE_FULL.findAll(line)) {
+                taken.add(m.range)
+                tokens.add(m.range to parseDate(m.groupValues[1], m.groupValues[2], m.groupValues[3]))
+            }
+            for (m in DATE_MY.findAll(line)) {
+                if (taken.any { it.first <= m.range.last && m.range.first <= it.last }) continue
+                tokens.add(m.range to parseDate(null, m.groupValues[1], m.groupValues[2]))
+            }
+
+            for ((range, parsed) in tokens) {
+                parsed ?: continue
+                val before = line.substring(0, range.first)
+                when {
+                    FAB_LABEL.containsMatchIn(before) -> if (fab == null) fab = parsed
+                    EXP_LABEL.containsMatchIn(before) -> if (exp == null) exp = parsed
+                    else -> unlabeled.add(parsed)
+                }
+            }
         }
-        return null
+
+        when {
+            fab == null && exp == null && unlabeled.size == 2 -> {
+                val sorted = unlabeled.sortedBy { it.key() }
+                fab = sorted[0]
+                exp = sorted[1]
+            }
+            fab == null && exp == null && unlabeled.size == 1 -> exp = unlabeled[0]
+            fab == null && exp != null && unlabeled.size == 1 -> fab = unlabeled[0]
+            exp == null && fab != null && unlabeled.size == 1 -> exp = unlabeled[0]
+        }
+        return fab?.formatted() to exp?.formatted()
+    }
+
+    /** Validates and normalizes; day is null for month/year tokens. */
+    private fun parseDate(dayStr: String?, monthStr: String, yearStr: String): ParsedDate? {
+        val month = monthStr.toIntOrNull() ?: return null
+        if (month !in 1..12) return null
+        var year = yearStr.toIntOrNull() ?: return null
+        when (yearStr.length) {
+            2 -> {
+                if (year !in TWO_DIGIT_YEAR_MIN..TWO_DIGIT_YEAR_MAX) return null
+                year += 2000
+            }
+            4 -> if (year !in 2000..2099) return null
+            else -> return null
+        }
+        val day = dayStr?.toIntOrNull()?.also { if (it !in 1..31) return null }
+        return ParsedDate(day, month, year)
     }
 
     // ---------------------------------------------------------------- Name
@@ -150,7 +285,7 @@ class VignetteParser(private val context: Context) {
         val candidateLines = lines
             .filter { line ->
                 !PPA_LABEL.containsMatchIn(line) &&
-                    !DATE.containsMatchIn(line) &&
+                    !DATE_MY.containsMatchIn(line) &&
                     !LOT_LABEL.containsMatchIn(line)
             }
             .map { it to scoreCandidate(it) }
@@ -268,17 +403,28 @@ class VignetteParser(private val context: Context) {
         private const val CANDIDATE_MIN_CONFIDENCE = 45
         private const val CANDIDATE_MAX_GAP = 15
         private const val MAX_NAME_OPTIONS = 3
+        private const val FALLBACK_CONFIDENCE = 50
+        private const val TWO_DIGIT_YEAR_MIN = 20
+        private const val TWO_DIGIT_YEAR_MAX = 39
 
         private val PPA_LABEL = Regex("""P\.?\s*P\.?\s*A""", RegexOption.IGNORE_CASE)
         private val MONEY = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:DA|DZD)?""")
         private val MONEY_WITH_DA = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:DA|DZD)\b""", RegexOption.IGNORE_CASE)
-        private val DATE = Regex("""\b\d{2}[/.\-]\d{2}(?:[/.\-]\d{2,4})?\b|\b\d{2}[/.\-]\d{4}\b""")
-        private val FAB_LABEL = Regex("""FAB|MFG|PROD""", RegexOption.IGNORE_CASE)
-        private val EXP_LABEL = Regex("""EXP|PER|USE\s*BY""", RegexOption.IGNORE_CASE)
+        private val DATE_FULL = Regex("""\b(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{2,4})\b""")
+        private val DATE_MY = Regex("""\b(\d{1,2})\s*[/.\-]\s*(\d{2,4})\b""")
+        // Anchored to the end of the text preceding the date token: the label
+        // must sit directly before the date ("EXP 11/27 FAB 11/24" resolves
+        // each token to its own label).
+        private val FAB_LABEL = Regex("""\b(?:DATE\s*)?(?:FAB\w*|MFG|PROD\w*)\s*[:. ]*$""", RegexOption.IGNORE_CASE)
+        private val EXP_LABEL = Regex("""\b(?:DATE\s*)?(?:EXP\w*|PER\w*|PEREMPTION)\s*[:. ]*$""", RegexOption.IGNORE_CASE)
         private val LOT_LABEL = Regex("""\bLOT\b|\bBATCH\b|N[°o]\s""", RegexOption.IGNORE_CASE)
         private val DOSAGE = Regex("""\b\d+(?:[.,]\d+)?\s?(MG|G|ML|UI|%|MCG|µG)\b""", RegexOption.IGNORE_CASE)
         private val DOSAGE_FULL = Regex(
             """\b\d+(?:[.,]\d+)?\s*(?:MG|G|ML|UI|MCG|%)(?:\s*/\s*\d+(?:[.,]\d+)?\s*(?:MG|G|ML|UI|MCG|%)?)?\b""",
+            RegexOption.IGNORE_CASE
+        )
+        private val COND_TOKEN = Regex(
+            """\b(?:B|BTE|FL|TB|8)\s*/\s*\d+(?:\s*(?:ML|COMP|GELULES?|SACHETS?|AMP(?:OULES)?|FLACONS?|STYLOS?))?\b""",
             RegexOption.IGNORE_CASE
         )
     }
