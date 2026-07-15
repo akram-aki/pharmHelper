@@ -72,6 +72,9 @@ class MainActivity : AppCompatActivity() {
         parser = VignetteParser(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
+        // Retry any records still queued from previous offline sessions.
+        UploadQueue.scheduleUpload(this)
+
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED

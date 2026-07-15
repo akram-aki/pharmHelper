@@ -15,6 +15,7 @@ captures/
 
 # Secrets — these must never be committed
 google-services.json
+app/src/main/assets/sheets_config.json
 firebase-key.json
 *-service-account*.json
 keystore.properties

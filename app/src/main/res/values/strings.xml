@@ -23,4 +23,12 @@
     <string name="name_not_recognized">Non reconnu</string>
     <string name="name_not_recognized_guess">Non reconnu (meilleure correspondance %1$d%%)</string>
     <string name="name_options_label">Plusieurs correspondances — choisissez</string>
+    <string name="next_button">Suivant</string>
+    <string name="quantity_title">Quantité</string>
+    <string name="quantity_hint">Nombre de boîtes / flacons</string>
+    <string name="confirm">Confirmer</string>
+    <string name="cancel">Annuler</string>
+    <string name="saved_uploading">Enregistré — envoi en cours</string>
+    <string name="not_configured">Envoi non configuré — enregistré localement</string>
+    <string name="quantity_invalid">Entrez une quantité valide</string>
 </resources>

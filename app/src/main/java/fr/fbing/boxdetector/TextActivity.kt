@@ -1,17 +1,32 @@
 package fr.fbing.boxdetector
 
 import android.os.Bundle
+import android.text.InputType
 import android.view.View
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class TextActivity : AppCompatActivity() {
 
     private lateinit var parser: VignetteParser
     private var rawText: String = ""
+
+    // User-validated values (radio selections included) — the value TextViews
+    // can't be scraped: the name embeds "(87%)" and empty fields show placeholders.
+    private var currentName: String? = null
+    private var currentDosage: String? = null
+    private var currentCond: String? = null
+    private var currentForme: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,8 +48,11 @@ class TextActivity : AppCompatActivity() {
             else -> getString(R.string.name_not_recognized)
         }
 
+        currentName = name
         setupNameOptions(nameValue, initialName = name)
         rebuildFields(name)
+
+        findViewById<View>(R.id.btn_next).setOnClickListener { showQuantityDialog() }
 
         findViewById<TextView>(R.id.field_ppa_value).text =
             intent.getStringExtra(EXTRA_PPA) ?: PLACEHOLDER
@@ -69,6 +87,7 @@ class TextActivity : AppCompatActivity() {
             val index = g.findViewById<RadioButton>(checkedId)?.tag as? Int
                 ?: return@setOnCheckedChangeListener
             nameValue.text = getString(R.string.name_with_confidence, options[index], confs[index])
+            currentName = options[index]
             // The other fields depend on the medicine's known variants.
             rebuildFields(options[index])
         }
@@ -77,16 +96,18 @@ class TextActivity : AppCompatActivity() {
     /** Cross-references dosage / conditionnement / forme for the given name. */
     private fun rebuildFields(name: String?) {
         val (dosage, cond, forme) = parser.matchFields(rawText, name)
-        bindField(R.id.field_dosage_value, R.id.dosage_options, dosage)
-        bindField(R.id.field_cond_value, R.id.cond_options, cond)
-        bindField(R.id.field_forme_value, R.id.forme_options, forme)
+        bindField(R.id.field_dosage_value, R.id.dosage_options, dosage) { currentDosage = it }
+        bindField(R.id.field_cond_value, R.id.cond_options, cond) { currentCond = it }
+        bindField(R.id.field_forme_value, R.id.forme_options, forme) { currentForme = it }
     }
 
     /**
      * Fills a field row. Confident values display directly; ambiguous or
      * unreadable ones show up to 3 catalog choices from the drug database.
+     * [onValue] tracks the validated value (null until the user picks when
+     * a choice is required).
      */
-    private fun bindField(valueId: Int, groupId: Int, field: FieldResult) {
+    private fun bindField(valueId: Int, groupId: Int, field: FieldResult, onValue: (String?) -> Unit) {
         val valueView = findViewById<TextView>(valueId)
         val group = findViewById<RadioGroup>(groupId)
         group.setOnCheckedChangeListener(null)
@@ -101,6 +122,7 @@ class TextActivity : AppCompatActivity() {
             field.value != null -> field.value   // single low-confidence guess, nothing to pick
             else -> PLACEHOLDER
         }
+        onValue(if (choices) null else field.value)
         if (!choices) {
             group.visibility = View.GONE
             return
@@ -119,7 +141,57 @@ class TextActivity : AppCompatActivity() {
             val index = g.findViewById<RadioButton>(checkedId)?.tag as? Int
                 ?: return@setOnCheckedChangeListener
             valueView.text = field.options[index]
+            onValue(field.options[index])
         }
+    }
+
+    // ------------------------------------------------- Quantity + upload
+
+    private fun showQuantityDialog() {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = getString(R.string.quantity_hint)
+        }
+        val container = FrameLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.quantity_title)
+            .setView(container)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                val quantity = input.text.toString().trim().toIntOrNull()
+                if (quantity == null || quantity <= 0) {
+                    Toast.makeText(this, R.string.quantity_invalid, Toast.LENGTH_SHORT).show()
+                } else {
+                    saveRecord(quantity)
+                }
+            }
+            .show()
+    }
+
+    private fun saveRecord(quantity: Int) {
+        val record = ExpiredRecord(
+            timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()),
+            nom = currentName.orEmpty(),
+            dosage = currentDosage.orEmpty(),
+            conditionnement = currentCond.orEmpty(),
+            forme = currentForme.orEmpty(),
+            ppa = fieldText(R.id.field_ppa_value),
+            datePeremption = fieldText(R.id.field_exp_value),
+            quantite = quantity
+        )
+        UploadQueue.enqueue(this, record)
+        val msg = if (SheetsClient(this).isConfigured()) R.string.saved_uploading else R.string.not_configured
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        finish()
+    }
+
+    private fun fieldText(id: Int): String {
+        val text = findViewById<TextView>(id).text.toString()
+        return if (text == PLACEHOLDER) "" else text
     }
 
     companion object {
