@@ -7,9 +7,12 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
+data class NameCandidate(val name: String, val confidence: Int)
+
 data class VignetteInfo(
     val name: String?,        // best dictionary match, null when below threshold
     val nameConfidence: Int,  // 0-100, of the best match even when rejected
+    val nameCandidates: List<NameCandidate>, // plausible matches, best first, ≤3
     val dosage: String?,      // e.g. "500MG" or "1G/125MG"
     val ppa: String?,         // e.g. "245.50 DA"
     val fabDate: String?,     // as printed, e.g. "03/2024"
@@ -39,11 +42,18 @@ class VignetteParser(private val context: Context) {
 
         val ppa = extractPpa(lines)
         val (fabDate, expDate) = extractDates(lines)
-        val (name, confidence, nameLine) = extractName(lines)
-        val dosage = extractDosage(lines, nameLine)
+        val nameResult = extractName(lines)
+        val dosage = extractDosage(lines, nameResult.bestLine)
 
-        Log.d(TAG, "name=$name conf=$confidence dosage=$dosage ppa=$ppa fab=$fabDate exp=$expDate")
-        return VignetteInfo(name, confidence, dosage, ppa, fabDate, expDate, rawText)
+        Log.d(
+            TAG,
+            "name=${nameResult.name} conf=${nameResult.confidence} " +
+                "candidates=${nameResult.candidates} dosage=$dosage ppa=$ppa fab=$fabDate exp=$expDate"
+        )
+        return VignetteInfo(
+            nameResult.name, nameResult.confidence, nameResult.candidates,
+            dosage, ppa, fabDate, expDate, rawText
+        )
     }
 
     // ---------------------------------------------------------------- PPA
@@ -129,8 +139,15 @@ class VignetteParser(private val context: Context) {
 
     // ---------------------------------------------------------------- Name
 
-    private fun extractName(lines: List<String>): Triple<String?, Int, String?> {
-        val candidates = lines
+    private class NameResult(
+        val name: String?,
+        val confidence: Int,
+        val candidates: List<NameCandidate>,
+        val bestLine: String?
+    )
+
+    private fun extractName(lines: List<String>): NameResult {
+        val candidateLines = lines
             .filter { line ->
                 !PPA_LABEL.containsMatchIn(line) &&
                     !DATE.containsMatchIn(line) &&
@@ -142,19 +159,15 @@ class VignetteParser(private val context: Context) {
             .take(MAX_CANDIDATES)
             .map { it.first }
 
-        var bestName: String? = null
-        var bestSim = 0f
-        var bestLine: String? = null
-        for (candidate in candidates) {
+        // Best similarity per dictionary name across every line and variant,
+        // so runner-up candidates survive for the user picker.
+        val sims = HashMap<String, Float>()
+        val sourceLines = HashMap<String, String>()
+        for (candidate in candidateLines) {
             val normalized = normalize(candidate)
             if (normalized.length < 3) continue
 
-            val (fullName, fullSim) = bestDictionaryMatch(normalized)
-            if (fullSim > bestSim) {
-                bestSim = fullSim
-                bestName = fullName
-                bestLine = candidate
-            }
+            accumulateMatches(normalized, CANDIDATE_FLOOR_SIM, sims, sourceLines, candidate)
 
             // Leading tokens too: brand names are often a single word among
             // dosage/form noise. Partial-line matches must be near-exact,
@@ -163,21 +176,51 @@ class VignetteParser(private val context: Context) {
             if (tokens.size > 1) {
                 for (variant in listOf(tokens[0], tokens.take(2).joinToString(" ")).distinct()) {
                     if (variant.length < 3) continue
-                    val (name, sim) = bestDictionaryMatch(variant)
-                    if (sim >= TOKEN_MIN_SIM && sim > bestSim) {
-                        bestSim = sim
-                        bestName = name
-                        bestLine = candidate
-                    }
+                    accumulateMatches(variant, TOKEN_MIN_SIM, sims, sourceLines, candidate)
                 }
             }
         }
 
-        val confidence = (bestSim * 100).toInt()
-        return if (confidence >= ACCEPT_CONFIDENCE) {
-            Triple(bestName, confidence, bestLine)
+        val ranked = sims.entries.sortedByDescending { it.value }
+        val best = ranked.firstOrNull()
+        val bestConfidence = ((best?.value ?: 0f) * 100).toInt()
+
+        val candidates = ranked
+            .map { NameCandidate(it.key, (it.value * 100).toInt()) }
+            .filter { it.confidence >= CANDIDATE_MIN_CONFIDENCE && it.confidence >= bestConfidence - CANDIDATE_MAX_GAP }
+            .take(MAX_NAME_OPTIONS)
+
+        return if (bestConfidence >= ACCEPT_CONFIDENCE && best != null) {
+            NameResult(best.key, bestConfidence, candidates, sourceLines[best.key])
         } else {
-            Triple(null, confidence, null)
+            NameResult(null, bestConfidence, candidates, null)
+        }
+    }
+
+    /**
+     * Records into [sims] every dictionary name whose similarity to [query]
+     * is at least [minSim], keeping the best similarity seen per name.
+     */
+    private fun accumulateMatches(
+        query: String,
+        minSim: Float,
+        sims: MutableMap<String, Float>,
+        sourceLines: MutableMap<String, String>,
+        sourceLine: String
+    ) {
+        for (name in dictionary) {
+            // Cheap length pruning before Levenshtein.
+            val maxLen = max(name.length, query.length)
+            if (abs(name.length - query.length) > maxLen * 0.4f) continue
+            val upperBound = 1f - abs(name.length - query.length).toFloat() / maxLen
+            if (upperBound < minSim) continue
+            val sim = 1f - levenshtein(query, name).toFloat() / maxLen
+            if (sim < minSim) continue
+            val previous = sims[name]
+            if (previous == null || sim > previous) {
+                sims[name] = sim
+                sourceLines[name] = sourceLine
+            }
         }
     }
 
@@ -189,24 +232,6 @@ class VignetteParser(private val context: Context) {
         if (letters > 0 && upper.toFloat() / letters > 0.7f) score += 10
         if (DOSAGE.containsMatchIn(line)) score += 15
         return score
-    }
-
-    private fun bestDictionaryMatch(candidate: String): Pair<String?, Float> {
-        var bestName: String? = null
-        var bestSim = 0f
-        for (name in dictionary) {
-            // Cheap length pruning before Levenshtein.
-            val maxLen = max(name.length, candidate.length)
-            if (abs(name.length - candidate.length) > maxLen * 0.4f) continue
-            val upperBound = 1f - abs(name.length - candidate.length).toFloat() / maxLen
-            if (upperBound <= bestSim) continue
-            val sim = 1f - levenshtein(candidate, name).toFloat() / maxLen
-            if (sim > bestSim) {
-                bestSim = sim
-                bestName = name
-            }
-        }
-        return bestName to bestSim
     }
 
     private fun levenshtein(a: String, b: String): Int {
@@ -239,6 +264,10 @@ class VignetteParser(private val context: Context) {
         private const val MAX_CANDIDATES = 5
         const val ACCEPT_CONFIDENCE = 60
         private const val TOKEN_MIN_SIM = 0.85f
+        private const val CANDIDATE_FLOOR_SIM = 0.45f
+        private const val CANDIDATE_MIN_CONFIDENCE = 45
+        private const val CANDIDATE_MAX_GAP = 15
+        private const val MAX_NAME_OPTIONS = 3
 
         private val PPA_LABEL = Regex("""P\.?\s*P\.?\s*A""", RegexOption.IGNORE_CASE)
         private val MONEY = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:DA|DZD)?""")

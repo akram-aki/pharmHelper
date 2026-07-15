@@ -50,6 +50,23 @@
                     android:paddingBottom="12dp" />
 
                 <TextView
+                    android:id="@+id/name_options_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/name_options_label"
+                    android:textSize="13sp"
+                    android:textAllCaps="true"
+                    android:alpha="0.6"
+                    android:visibility="gone" />
+
+                <RadioGroup
+                    android:id="@+id/name_options"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingBottom="12dp"
+                    android:visibility="gone" />
+
+                <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/field_dosage"

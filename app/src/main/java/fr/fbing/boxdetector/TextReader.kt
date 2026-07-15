@@ -56,16 +56,19 @@ class TextReader {
             return
         }
 
-        val crop = Bitmap.createBitmap(source, x, y, w, h)
+        val rawCrop = Bitmap.createBitmap(source, x, y, w, h)
 
-        val sharpness = sharpness(crop)
+        // Gate on the ORIGINAL crop so upscaling can't fake sharpness.
+        val sharpness = sharpness(rawCrop)
         if (sharpness < SHARPNESS_MIN) {
             Log.d(TAG, "fail: blurry sharpness=%.1f < %.1f".format(sharpness, SHARPNESS_MIN))
-            crop.recycle()
+            rawCrop.recycle()
             inFlight.set(false)
             onFail(FailReason.BLURRY)
             return
         }
+
+        val crop = ensureReadable(rawCrop)
 
         val start = SystemClock.elapsedRealtime()
         // The box may carry text in more than one orientation (e.g. a side
@@ -85,6 +88,26 @@ class TextReader {
             inFlight.set(false)
             crop.recycle()
         }
+    }
+
+    /**
+     * ML Kit reads small text poorly; upscale (bilinear, at most ×3) so the
+     * crop's short side is at least [MIN_READABLE_SIDE] px. Recycles the
+     * input when a new bitmap is produced.
+     */
+    private fun ensureReadable(crop: Bitmap): Bitmap {
+        val shortSide = min(crop.width, crop.height)
+        if (shortSide >= MIN_READABLE_SIDE) return crop
+        val factor = min(MAX_UPSCALE, MIN_READABLE_SIDE.toFloat() / shortSide)
+        val scaled = Bitmap.createScaledBitmap(
+            crop,
+            (crop.width * factor).roundToInt(),
+            (crop.height * factor).roundToInt(),
+            true
+        )
+        Log.d(TAG, "upscaled crop x%.1f to ${scaled.width}x${scaled.height}".format(factor))
+        crop.recycle()
+        return scaled
     }
 
     /** Runs the recognizer once per entry in [ROTATIONS], accumulating raw lines. */
@@ -181,6 +204,8 @@ class TextReader {
         private const val SHARPNESS_MIN = 80f
         private const val SHARPNESS_MAX_SIDE = 160
         private const val MIN_ACCEPT_CHARS = 4
+        private const val MIN_READABLE_SIDE = 300
+        private const val MAX_UPSCALE = 3f
         // 0 = as-detected, 90/270 = text printed perpendicular to the main label.
         private val ROTATIONS = intArrayOf(0, 90, 270)
     }
