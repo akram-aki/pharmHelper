@@ -455,6 +455,8 @@ class VignetteParser(private val context: Context) {
         private const val CANDIDATE_MAX_GAP = 15
         private const val MAX_NAME_OPTIONS = 3
         private const val FALLBACK_CONFIDENCE = 50
+        // Below this best-catalog similarity, the raw OCR reading is offered too.
+        private const val OCR_OPTION_SIM = 0.75f
         private const val TWO_DIGIT_YEAR_MIN = 20
         private const val TWO_DIGIT_YEAR_MAX = 39
 
