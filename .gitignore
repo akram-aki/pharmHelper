@@ -16,6 +16,8 @@ captures/
 # Secrets — these must never be committed
 google-services.json
 app/src/main/assets/sheets_config.json
+pharmaapp-*-*.json
+sheets_config_secret.json
 firebase-key.json
 *-service-account*.json
 keystore.properties
