@@ -21,6 +21,9 @@ keystore.properties
 *.keystore
 *.jks
 
+# Source data — pharmacy DB used to derive assets/drug_names.txt, too big to commit
+STOCK.mdb
+
 # OS / editor
 .DS_Store
 Thumbs.db

@@ -19,14 +19,104 @@
         android:layout_height="match_parent"
         android:fillViewport="true">
 
-        <TextView
-            android:id="@+id/extracted_text"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:padding="20dp"
-            android:textSize="18sp"
-            android:lineSpacingExtra="6dp"
-            android:textIsSelectable="true" />
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="#14000000">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/field_name"
+                    android:textSize="13sp"
+                    android:textAllCaps="true"
+                    android:alpha="0.6" />
+
+                <TextView
+                    android:id="@+id/field_name_value"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:textIsSelectable="true"
+                    android:paddingBottom="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/field_ppa"
+                    android:textSize="13sp"
+                    android:textAllCaps="true"
+                    android:alpha="0.6" />
+
+                <TextView
+                    android:id="@+id/field_ppa_value"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="18sp"
+                    android:textIsSelectable="true"
+                    android:paddingBottom="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/field_fab_date"
+                    android:textSize="13sp"
+                    android:textAllCaps="true"
+                    android:alpha="0.6" />
+
+                <TextView
+                    android:id="@+id/field_fab_value"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="18sp"
+                    android:textIsSelectable="true"
+                    android:paddingBottom="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/field_exp_date"
+                    android:textSize="13sp"
+                    android:textAllCaps="true"
+                    android:alpha="0.6" />
+
+                <TextView
+                    android:id="@+id/field_exp_value"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="18sp"
+                    android:textIsSelectable="true" />
+
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/raw_text_title"
+                android:textSize="13sp"
+                android:textAllCaps="true"
+                android:alpha="0.6"
+                android:paddingTop="20dp"
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/extracted_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="15sp"
+                android:lineSpacingExtra="4dp"
+                android:textIsSelectable="true" />
+
+        </LinearLayout>
 
     </ScrollView>
 

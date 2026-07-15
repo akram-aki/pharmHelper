@@ -20,6 +20,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.math.max
 
 class MainActivity : AppCompatActivity() {
 
@@ -28,9 +29,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewTextButton: MaterialButton
     private lateinit var detector: BoxDetector
     private lateinit var textReader: TextReader
+    private lateinit var parser: VignetteParser
     private lateinit var cameraExecutor: ExecutorService
 
-    @Volatile private var latestText: String = ""
+    // Merged across OCR reads: best-confidence name, latest non-null fields.
+    @Volatile private var currentInfo = VignetteInfo(null, 0, null, null, null, "")
 
     private val requestPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -51,14 +54,21 @@ class MainActivity : AppCompatActivity() {
         overlay = findViewById(R.id.box_overlay)
         viewTextButton = findViewById(R.id.view_text_button)
         viewTextButton.setOnClickListener {
+            val info = currentInfo
             startActivity(
                 Intent(this, TextActivity::class.java)
-                    .putExtra(TextActivity.EXTRA_TEXT, latestText)
+                    .putExtra(TextActivity.EXTRA_NAME, info.name)
+                    .putExtra(TextActivity.EXTRA_NAME_CONFIDENCE, info.nameConfidence)
+                    .putExtra(TextActivity.EXTRA_PPA, info.ppa)
+                    .putExtra(TextActivity.EXTRA_FAB_DATE, info.fabDate)
+                    .putExtra(TextActivity.EXTRA_EXP_DATE, info.expDate)
+                    .putExtra(TextActivity.EXTRA_TEXT, info.rawText)
             )
         }
 
         detector = BoxDetector(this)
         textReader = TextReader()
+        parser = VignetteParser(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         val granted = ContextCompat.checkSelfPermission(
@@ -111,12 +121,31 @@ class MainActivity : AppCompatActivity() {
     private fun maybeRunOcr(upright: Bitmap, result: DetectionResult) {
         val best = result.detections.maxByOrNull { it.confidence } ?: return
         if (best.confidence < OCR_CONFIDENCE_THRESHOLD) return
-        textReader.maybeRead(upright, best.box) { text -> showOcrText(text) }
+        textReader.maybeRead(upright, best.box) { text -> onTextExtracted(text) }
     }
 
-    private fun showOcrText(text: String) {
-        latestText = text
-        viewTextButton.visibility = View.VISIBLE
+    /** Called on the main thread with accepted OCR text; parsing runs off it. */
+    private fun onTextExtracted(text: String) {
+        cameraExecutor.execute {
+            val parsed = parser.parse(text)
+            val merged = merge(currentInfo, parsed)
+            currentInfo = merged
+            runOnUiThread { viewTextButton.visibility = View.VISIBLE }
+        }
+    }
+
+    /** Keep the highest-confidence name and the latest non-null other fields. */
+    private fun merge(old: VignetteInfo, new: VignetteInfo): VignetteInfo {
+        val keepOldName = old.name != null && old.nameConfidence >= new.nameConfidence
+        return VignetteInfo(
+            name = if (keepOldName) old.name else new.name ?: old.name,
+            nameConfidence = if (keepOldName) old.nameConfidence
+                else max(new.nameConfidence, old.nameConfidence),
+            ppa = new.ppa ?: old.ppa,
+            fabDate = new.fabDate ?: old.fabDate,
+            expDate = new.expDate ?: old.expDate,
+            rawText = new.rawText
+        )
     }
 
     override fun onDestroy() {
