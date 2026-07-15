@@ -191,7 +191,9 @@ class SheetsClient(private val context: Context) {
         val json = JSONObject(
             context.assets.open(CONFIG_ASSET).bufferedReader().readText()
         )
-        val sa = json.getJSONObject("service_account")
+        // Accept both the {share_email, service_account:{...}} wrapper and a
+        // raw service-account key JSON pasted verbatim into the CI secret.
+        val sa = json.optJSONObject("service_account") ?: json
         val pem = sa.getString("private_key")
             .replace("-----BEGIN PRIVATE KEY-----", "")
             .replace("-----END PRIVATE KEY-----", "")
@@ -202,7 +204,7 @@ class SheetsClient(private val context: Context) {
             clientEmail = sa.getString("client_email"),
             privateKey = key,
             tokenUri = sa.optString("token_uri", "https://oauth2.googleapis.com/token"),
-            shareEmail = json.getString("share_email")
+            shareEmail = json.optString("share_email", DEFAULT_SHARE_EMAIL)
         )
     } catch (e: Exception) {
         Log.i(TAG, "no usable sheets_config.json (${e.javaClass.simpleName}) — upload disabled")
@@ -257,6 +259,9 @@ class SheetsClient(private val context: Context) {
     companion object {
         private const val TAG = "SheetsClient"
         private const val CONFIG_ASSET = "sheets_config.json"
+        // Spreadsheets are shared with this account when the CI secret is a
+        // raw service-account key without a share_email wrapper.
+        private const val DEFAULT_SHARE_EMAIL = "boudjadja.akrem@gmail.com"
         private const val PREFS = "sheets_prefs"
         private const val SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets"
         private const val DRIVE_BASE = "https://www.googleapis.com/drive/v3"
