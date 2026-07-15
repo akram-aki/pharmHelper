@@ -98,9 +98,18 @@ class VignetteParser(private val context: Context) {
         val variants = name?.let { DrugDb.variantsFor(it) }.orEmpty()
         if (variants.isEmpty()) return Triple(fallbackDosage(lines), fallbackCond(lines), FieldResult.EMPTY)
 
-        val dosage = matchField(dosageTokens(lines), variants.map { it.dosage })
-        val cond = matchField(condTokens(lines), variants.map { it.cond })
-        val forme = matchField(formeTokens(lines), variants.map { it.forme })
+        val dosage = matchField(
+            dosageTokens(lines), variants.map { it.dosage },
+            canon = ::canonCompact, offerOcrToken = true
+        )
+        val cond = matchField(
+            condTokens(lines), variants.map { it.cond },
+            canon = ::canonCond, offerOcrToken = true
+        )
+        val forme = matchField(
+            formeTokens(lines), variants.map { it.forme },
+            canon = ::canonForme, offerOcrToken = false // forme tokens are any word, too noisy to offer
+        )
         return Triple(dosage, cond, forme)
     }
 
@@ -108,16 +117,29 @@ class VignetteParser(private val context: Context) {
 
     /**
      * Ranks the known values of a field (frequency-weighted) by their best
-     * similarity to any OCR token. With no OCR token everything scores 0 and
-     * frequency alone ranks the options.
+     * similarity to any OCR token, comparing canonical forms (so B/8 matches
+     * catalog BTE/8). With no OCR token everything scores 0 and frequency
+     * alone ranks the options. When OCR clearly read something no catalog
+     * entry resembles, the raw reading itself is offered as first choice.
      */
-    private fun matchField(ocrTokens: List<String>, knownValues: List<String>): FieldResult {
+    private fun matchField(
+        ocrTokens: List<String>,
+        knownValues: List<String>,
+        canon: (String) -> String,
+        offerOcrToken: Boolean
+    ): FieldResult {
         val freq = knownValues.filter { it.isNotBlank() }.groupingBy { it }.eachCount()
-        if (freq.isEmpty()) return FieldResult.EMPTY
+        if (freq.isEmpty()) {
+            if (!offerOcrToken) return FieldResult.EMPTY
+            val token = ocrTokens.firstOrNull() ?: return FieldResult.EMPTY
+            return FieldResult(token, FALLBACK_CONFIDENCE, listOf(token), listOf(FALLBACK_CONFIDENCE))
+        }
 
+        val canonTokens = ocrTokens.map(canon).filter { it.isNotEmpty() }
         val scored = freq.entries
             .map { (known, count) ->
-                val sim = ocrTokens.maxOfOrNull { similarity(it, known) } ?: 0f
+                val ck = canon(known)
+                val sim = canonTokens.maxOfOrNull { similarity(it, ck) } ?: 0f
                 Triple(known, sim, count)
             }
             .sortedWith(
@@ -127,13 +149,35 @@ class VignetteParser(private val context: Context) {
             .take(MAX_NAME_OPTIONS)
 
         val best = scored.first()
+        val options = scored.map { it.first }.toMutableList()
+        val optionConfs = scored.map { (it.second * 100).toInt() }.toMutableList()
+
+        if (offerOcrToken && ocrTokens.isNotEmpty() && best.second < OCR_OPTION_SIM) {
+            // Sticker says something the catalog doesn't know — trust the print
+            // enough to offer it as a choice ahead of weak catalog guesses.
+            val token = ocrTokens.first()
+            options.add(0, token)
+            optionConfs.add(0, FALLBACK_CONFIDENCE)
+            return FieldResult(token, FALLBACK_CONFIDENCE, options.take(MAX_NAME_OPTIONS), optionConfs.take(MAX_NAME_OPTIONS))
+        }
+
         return FieldResult(
             value = best.first,
             confidence = (best.second * 100).toInt(),
-            options = scored.map { it.first },
-            optionConfidences = scored.map { (it.second * 100).toInt() }
+            options = options,
+            optionConfidences = optionConfs
         )
     }
+
+    /** Compact uppercase: spaces removed. */
+    private fun canonCompact(s: String): String = s.uppercase().replace(Regex("\\s+"), "")
+
+    /** B, BT and BTE all mean "boîte" — canonicalize to B for comparison. */
+    private fun canonCond(s: String): String =
+        canonCompact(s).replace(Regex("^BTE?(?=/)"), "B")
+
+    /** Dots and spaces are formatting noise in formes (COMP. vs COMP). */
+    private fun canonForme(s: String): String = canonCompact(s).replace(".", "")
 
     private fun similarity(a: String, b: String): Float {
         if (a == b) return 1f
@@ -149,11 +193,12 @@ class VignetteParser(private val context: Context) {
 
     private fun condTokens(lines: List<String>): List<String> =
         lines.flatMap { line ->
-            COND_TOKEN.findAll(line).map { m ->
-                m.value.uppercase()
-                    .replace(Regex("\\s+"), "")
-                    // Common OCR misread of the leading "B".
-                    .replace(Regex("^8"), "B")
+            COND_TOKEN.findAll(line).flatMap { m ->
+                // Common OCR misread of the leading "B".
+                val core = canonCompact(m.groupValues[1]).replace(Regex("^8"), "B")
+                val suffix = canonCompact(m.groupValues[2])
+                // Both variants: catalog has plain "B/12" and "B/12 SACHETS".
+                if (suffix.isEmpty()) listOf(core) else listOf(core, "$core $suffix")
             }
         }.distinct()
 
@@ -173,12 +218,8 @@ class VignetteParser(private val context: Context) {
     }
 
     private fun fallbackCond(lines: List<String>): FieldResult {
-        for (line in lines) {
-            val m = COND_TOKEN.find(line) ?: continue
-            val value = m.value.uppercase().replace(Regex("\\s+"), "").replace(Regex("^8"), "B")
-            return FieldResult(value, FALLBACK_CONFIDENCE, listOf(value), listOf(FALLBACK_CONFIDENCE))
-        }
-        return FieldResult.EMPTY
+        val value = condTokens(lines).firstOrNull() ?: return FieldResult.EMPTY
+        return FieldResult(value, FALLBACK_CONFIDENCE, listOf(value), listOf(FALLBACK_CONFIDENCE))
     }
 
     // ---------------------------------------------------------------- PPA
@@ -444,8 +485,11 @@ class VignetteParser(private val context: Context) {
             """\b\d+(?:[.,]\d+)?\s*(?:MG|G|ML|UI|MCG|%)(?:\s*/\s*\d+(?:[.,]\d+)?\s*(?:MG|G|ML|UI|MCG|%)?)?\b""",
             RegexOption.IGNORE_CASE
         )
+        // Group 1 = core (B/8), group 2 = optional packaging word even when OCR
+        // glues it to the number (b/8comprime). (?!\d) instead of \b so a
+        // trailing letter can't kill the whole match.
         private val COND_TOKEN = Regex(
-            """\b(?:B|BTE|FL|TB|8)\s*/\s*\d+(?:\s*(?:ML|COMP|GELULES?|SACHETS?|AMP(?:OULES)?|FLACONS?|STYLOS?))?\b""",
+            """\b((?:BTE|BT|FL|B|8)\s*/\s*\d{1,3})\s*(ML|COMP\w*|GELULE\w*|SACHET\w*|AMP\w*|FLACON\w*|STYLO\w*)?(?!\d)""",
             RegexOption.IGNORE_CASE
         )
     }
