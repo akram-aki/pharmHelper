@@ -2,10 +2,16 @@
 <resources>
     <string name="app_name">Box Detector</string>
     <string name="camera_permission_denied">Camera permission is required for this app to work.</string>
-    <string name="view_text_button">View text</string>
+    <string name="scan_button">Scanner</string>
+    <string name="scanning">Scan…</string>
+    <string name="toast_no_box">Aucune vignette détectée — visez la vignette verte</string>
+    <string name="toast_too_small">Trop petit — rapprochez-vous</string>
+    <string name="toast_blurry">Image floue — tenez le téléphone stable</string>
+    <string name="toast_no_text">Aucun texte lisible — réessayez</string>
     <string name="extracted_text_title">Extracted text</string>
     <string name="no_text_yet">No text has been extracted yet. Point the camera at a box and hold steady.</string>
     <string name="field_name">Médicament</string>
+    <string name="field_dosage">Dosage</string>
     <string name="field_ppa">PPA</string>
     <string name="field_fab_date">Date de fabrication</string>
     <string name="field_exp_date">Date de péremption</string>

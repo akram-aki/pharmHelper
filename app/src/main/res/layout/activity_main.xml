@@ -15,13 +15,13 @@
         android:layout_height="match_parent" />
 
     <com.google.android.material.button.MaterialButton
-        android:id="@+id/view_text_button"
+        android:id="@+id/scan_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="32dp"
-        android:paddingHorizontal="24dp"
-        android:text="@string/view_text_button"
-        android:visibility="gone" />
+        android:paddingHorizontal="32dp"
+        android:text="@string/scan_button"
+        android:enabled="false" />
 
 </FrameLayout>

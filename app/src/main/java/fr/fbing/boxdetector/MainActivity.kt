@@ -5,10 +5,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.graphics.RectF
 import android.os.Bundle
-import android.view.View
+import android.os.SystemClock
 import android.widget.Toast
-import com.google.android.material.button.MaterialButton
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
@@ -18,22 +18,24 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import com.google.android.material.button.MaterialButton
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import kotlin.math.max
 
 class MainActivity : AppCompatActivity() {
 
+    /** Latest frame whose best detection cleared the confidence threshold. */
+    private class ScanCandidate(val frame: Bitmap, val box: RectF, val at: Long)
+
     private lateinit var previewView: PreviewView
     private lateinit var overlay: BoxOverlay
-    private lateinit var viewTextButton: MaterialButton
+    private lateinit var scanButton: MaterialButton
     private lateinit var detector: BoxDetector
     private lateinit var textReader: TextReader
     private lateinit var parser: VignetteParser
     private lateinit var cameraExecutor: ExecutorService
 
-    // Merged across OCR reads: best-confidence name, latest non-null fields.
-    @Volatile private var currentInfo = VignetteInfo(null, 0, null, null, null, "")
+    @Volatile private var candidate: ScanCandidate? = null
 
     private val requestPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -52,19 +54,8 @@ class MainActivity : AppCompatActivity() {
 
         previewView = findViewById(R.id.preview_view)
         overlay = findViewById(R.id.box_overlay)
-        viewTextButton = findViewById(R.id.view_text_button)
-        viewTextButton.setOnClickListener {
-            val info = currentInfo
-            startActivity(
-                Intent(this, TextActivity::class.java)
-                    .putExtra(TextActivity.EXTRA_NAME, info.name)
-                    .putExtra(TextActivity.EXTRA_NAME_CONFIDENCE, info.nameConfidence)
-                    .putExtra(TextActivity.EXTRA_PPA, info.ppa)
-                    .putExtra(TextActivity.EXTRA_FAB_DATE, info.fabDate)
-                    .putExtra(TextActivity.EXTRA_EXP_DATE, info.expDate)
-                    .putExtra(TextActivity.EXTRA_TEXT, info.rawText)
-            )
-        }
+        scanButton = findViewById(R.id.scan_button)
+        scanButton.setOnClickListener { scan() }
 
         detector = BoxDetector(this)
         textReader = TextReader()
@@ -103,8 +94,15 @@ class MainActivity : AppCompatActivity() {
         try {
             val upright = image.toUprightBitmap()
             val result = detector.detect(upright, 0)
-            runOnUiThread { overlay.setDetections(result) }
-            maybeRunOcr(upright, result)
+            val best = result.detections.maxByOrNull { it.confidence }
+            val eligible = best != null && best.confidence >= OCR_CONFIDENCE_THRESHOLD
+            if (eligible) {
+                candidate = ScanCandidate(upright, best!!.box, SystemClock.elapsedRealtime())
+            }
+            runOnUiThread {
+                overlay.setDetections(result)
+                if (!scanning) scanButton.isEnabled = eligible || candidateIsFresh()
+            }
         } finally {
             image.close()
         }
@@ -118,33 +116,61 @@ class MainActivity : AppCompatActivity() {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    private fun maybeRunOcr(upright: Bitmap, result: DetectionResult) {
-        val best = result.detections.maxByOrNull { it.confidence } ?: return
-        if (best.confidence < OCR_CONFIDENCE_THRESHOLD) return
-        textReader.maybeRead(upright, best.box) { text -> onTextExtracted(text) }
+    private fun candidateIsFresh(): Boolean {
+        val c = candidate ?: return false
+        return SystemClock.elapsedRealtime() - c.at <= CANDIDATE_TTL_MS
     }
 
-    /** Called on the main thread with accepted OCR text; parsing runs off it. */
-    private fun onTextExtracted(text: String) {
-        cameraExecutor.execute {
-            val parsed = parser.parse(text)
-            val merged = merge(currentInfo, parsed)
-            currentInfo = merged
-            runOnUiThread { viewTextButton.visibility = View.VISIBLE }
+    private var scanning = false
+
+    /** Button click: OCR the last good detection, parse, open the result screen. */
+    private fun scan() {
+        val c = candidate
+        if (c == null || !candidateIsFresh()) {
+            Toast.makeText(this, R.string.toast_no_box, Toast.LENGTH_SHORT).show()
+            return
         }
+        setScanning(true)
+        textReader.read(
+            c.frame, c.box,
+            onText = { text ->
+                cameraExecutor.execute {
+                    val info = parser.parse(text)
+                    runOnUiThread {
+                        setScanning(false)
+                        showResult(info)
+                    }
+                }
+            },
+            onFail = { reason ->
+                setScanning(false)
+                val msg = when (reason) {
+                    TextReader.FailReason.BUSY -> return@read
+                    TextReader.FailReason.TOO_SMALL -> R.string.toast_too_small
+                    TextReader.FailReason.BLURRY -> R.string.toast_blurry
+                    TextReader.FailReason.NO_TEXT -> R.string.toast_no_text
+                }
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 
-    /** Keep the highest-confidence name and the latest non-null other fields. */
-    private fun merge(old: VignetteInfo, new: VignetteInfo): VignetteInfo {
-        val keepOldName = old.name != null && old.nameConfidence >= new.nameConfidence
-        return VignetteInfo(
-            name = if (keepOldName) old.name else new.name ?: old.name,
-            nameConfidence = if (keepOldName) old.nameConfidence
-                else max(new.nameConfidence, old.nameConfidence),
-            ppa = new.ppa ?: old.ppa,
-            fabDate = new.fabDate ?: old.fabDate,
-            expDate = new.expDate ?: old.expDate,
-            rawText = new.rawText
+    private fun setScanning(active: Boolean) {
+        scanning = active
+        scanButton.isEnabled = !active
+        scanButton.setText(if (active) R.string.scanning else R.string.scan_button)
+    }
+
+    private fun showResult(info: VignetteInfo) {
+        startActivity(
+            Intent(this, TextActivity::class.java)
+                .putExtra(TextActivity.EXTRA_NAME, info.name)
+                .putExtra(TextActivity.EXTRA_NAME_CONFIDENCE, info.nameConfidence)
+                .putExtra(TextActivity.EXTRA_DOSAGE, info.dosage)
+                .putExtra(TextActivity.EXTRA_PPA, info.ppa)
+                .putExtra(TextActivity.EXTRA_FAB_DATE, info.fabDate)
+                .putExtra(TextActivity.EXTRA_EXP_DATE, info.expDate)
+                .putExtra(TextActivity.EXTRA_TEXT, info.rawText)
         )
     }
 
@@ -157,5 +183,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val OCR_CONFIDENCE_THRESHOLD = 0.70f
+        private const val CANDIDATE_TTL_MS = 3000L
     }
 }

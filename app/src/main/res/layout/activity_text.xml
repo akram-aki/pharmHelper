@@ -52,6 +52,22 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:text="@string/field_dosage"
+                    android:textSize="13sp"
+                    android:textAllCaps="true"
+                    android:alpha="0.6" />
+
+                <TextView
+                    android:id="@+id/field_dosage_value"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="18sp"
+                    android:textIsSelectable="true"
+                    android:paddingBottom="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="@string/field_ppa"
                     android:textSize="13sp"
                     android:textAllCaps="true"

@@ -23,6 +23,8 @@ class TextActivity : AppCompatActivity() {
             else -> getString(R.string.name_not_recognized)
         }
 
+        findViewById<TextView>(R.id.field_dosage_value).text =
+            intent.getStringExtra(EXTRA_DOSAGE) ?: PLACEHOLDER
         findViewById<TextView>(R.id.field_ppa_value).text =
             intent.getStringExtra(EXTRA_PPA) ?: PLACEHOLDER
         findViewById<TextView>(R.id.field_fab_value).text =
@@ -39,6 +41,7 @@ class TextActivity : AppCompatActivity() {
         const val EXTRA_TEXT = "extracted_text"
         const val EXTRA_NAME = "name"
         const val EXTRA_NAME_CONFIDENCE = "name_confidence"
+        const val EXTRA_DOSAGE = "dosage"
         const val EXTRA_PPA = "ppa"
         const val EXTRA_FAB_DATE = "fab_date"
         const val EXTRA_EXP_DATE = "exp_date"

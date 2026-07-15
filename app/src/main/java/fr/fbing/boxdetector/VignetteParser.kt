@@ -10,6 +10,7 @@ import kotlin.math.min
 data class VignetteInfo(
     val name: String?,        // best dictionary match, null when below threshold
     val nameConfidence: Int,  // 0-100, of the best match even when rejected
+    val dosage: String?,      // e.g. "500MG" or "1G/125MG"
     val ppa: String?,         // e.g. "245.50 DA"
     val fabDate: String?,     // as printed, e.g. "03/2024"
     val expDate: String?,
@@ -38,10 +39,11 @@ class VignetteParser(private val context: Context) {
 
         val ppa = extractPpa(lines)
         val (fabDate, expDate) = extractDates(lines)
-        val (name, confidence) = extractName(lines)
+        val (name, confidence, nameLine) = extractName(lines)
+        val dosage = extractDosage(lines, nameLine)
 
-        Log.d(TAG, "name=$name conf=$confidence ppa=$ppa fab=$fabDate exp=$expDate")
-        return VignetteInfo(name, confidence, ppa, fabDate, expDate, rawText)
+        Log.d(TAG, "name=$name conf=$confidence dosage=$dosage ppa=$ppa fab=$fabDate exp=$expDate")
+        return VignetteInfo(name, confidence, dosage, ppa, fabDate, expDate, rawText)
     }
 
     // ---------------------------------------------------------------- PPA
@@ -109,9 +111,25 @@ class VignetteParser(private val context: Context) {
         }
     }
 
+    // -------------------------------------------------------------- Dosage
+
+    /**
+     * Prefers a dosage on the line the name was matched from, then falls back
+     * to the first dosage-looking token anywhere. Handles compound dosages
+     * like "1G/125MG".
+     */
+    private fun extractDosage(lines: List<String>, nameLine: String?): String? {
+        val searchOrder = if (nameLine != null) listOf(nameLine) + lines else lines
+        for (line in searchOrder) {
+            val m = DOSAGE_FULL.find(line) ?: continue
+            return m.value.uppercase().replace(Regex("\\s+"), "")
+        }
+        return null
+    }
+
     // ---------------------------------------------------------------- Name
 
-    private fun extractName(lines: List<String>): Pair<String?, Int> {
+    private fun extractName(lines: List<String>): Triple<String?, Int, String?> {
         val candidates = lines
             .filter { line ->
                 !PPA_LABEL.containsMatchIn(line) &&
@@ -126,6 +144,7 @@ class VignetteParser(private val context: Context) {
 
         var bestName: String? = null
         var bestSim = 0f
+        var bestLine: String? = null
         for (candidate in candidates) {
             val normalized = normalize(candidate)
             if (normalized.length < 3) continue
@@ -134,6 +153,7 @@ class VignetteParser(private val context: Context) {
             if (fullSim > bestSim) {
                 bestSim = fullSim
                 bestName = fullName
+                bestLine = candidate
             }
 
             // Leading tokens too: brand names are often a single word among
@@ -147,13 +167,18 @@ class VignetteParser(private val context: Context) {
                     if (sim >= TOKEN_MIN_SIM && sim > bestSim) {
                         bestSim = sim
                         bestName = name
+                        bestLine = candidate
                     }
                 }
             }
         }
 
         val confidence = (bestSim * 100).toInt()
-        return if (confidence >= ACCEPT_CONFIDENCE) bestName to confidence else null to confidence
+        return if (confidence >= ACCEPT_CONFIDENCE) {
+            Triple(bestName, confidence, bestLine)
+        } else {
+            Triple(null, confidence, null)
+        }
     }
 
     private fun scoreCandidate(line: String): Int {
@@ -223,5 +248,9 @@ class VignetteParser(private val context: Context) {
         private val EXP_LABEL = Regex("""EXP|PER|USE\s*BY""", RegexOption.IGNORE_CASE)
         private val LOT_LABEL = Regex("""\bLOT\b|\bBATCH\b|N[°o]\s""", RegexOption.IGNORE_CASE)
         private val DOSAGE = Regex("""\b\d+(?:[.,]\d+)?\s?(MG|G|ML|UI|%|MCG|µG)\b""", RegexOption.IGNORE_CASE)
+        private val DOSAGE_FULL = Regex(
+            """\b\d+(?:[.,]\d+)?\s*(?:MG|G|ML|UI|MCG|%)(?:\s*/\s*\d+(?:[.,]\d+)?\s*(?:MG|G|ML|UI|MCG|%)?)?\b""",
+            RegexOption.IGNORE_CASE
+        )
     }
 }

@@ -14,24 +14,32 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Runs ML Kit text recognition on a detected box region, but only when the
- * crop looks readable: big enough and sharp enough. At most one recognition
- * is in flight at a time.
+ * On-demand ML Kit text recognition on a detected box region. The crop must
+ * look readable (big enough, sharp enough) or the read fails fast with a
+ * reason the UI can show. One read runs at a time.
  */
 class TextReader {
 
+    enum class FailReason { BUSY, TOO_SMALL, BLURRY, NO_TEXT }
+
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val inFlight = AtomicBoolean(false)
-    @Volatile private var lastOcrAt = 0L
 
     /**
-     * Called on the analysis thread. Crops [box] out of [source], applies the
-     * readability gates and, if they pass, runs OCR. [onText] is invoked on
-     * the main thread only when text is accepted.
+     * Crops [box] out of [source] and runs OCR. [onText] receives the merged
+     * text on the main thread; [onFail] the reason (gate failures fire on the
+     * caller thread, recognition failures on the main thread).
      */
-    fun maybeRead(source: Bitmap, box: RectF, onText: (String) -> Unit) {
-        val now = SystemClock.elapsedRealtime()
-        if (inFlight.get() || now - lastOcrAt < MIN_INTERVAL_MS) return
+    fun read(
+        source: Bitmap,
+        box: RectF,
+        onText: (String) -> Unit,
+        onFail: (FailReason) -> Unit
+    ) {
+        if (!inFlight.compareAndSet(false, true)) {
+            onFail(FailReason.BUSY)
+            return
+        }
 
         // Pad the box so text touching the detection edge isn't clipped.
         val padX = box.width() * PAD_FRACTION
@@ -42,7 +50,9 @@ class TextReader {
         val h = min(source.height.toFloat(), box.bottom + padY).roundToInt() - y
 
         if (w < MIN_CROP_W || h < MIN_CROP_H) {
-            Log.d(TAG, "skip: too small ${w}x$h")
+            Log.d(TAG, "fail: too small ${w}x$h")
+            inFlight.set(false)
+            onFail(FailReason.TOO_SMALL)
             return
         }
 
@@ -50,15 +60,13 @@ class TextReader {
 
         val sharpness = sharpness(crop)
         if (sharpness < SHARPNESS_MIN) {
-            Log.d(TAG, "skip: blurry sharpness=%.1f < %.1f".format(sharpness, SHARPNESS_MIN))
+            Log.d(TAG, "fail: blurry sharpness=%.1f < %.1f".format(sharpness, SHARPNESS_MIN))
             crop.recycle()
+            inFlight.set(false)
+            onFail(FailReason.BLURRY)
             return
         }
 
-        if (!inFlight.compareAndSet(false, true)) {
-            crop.recycle()
-            return
-        }
         val start = SystemClock.elapsedRealtime()
         // The box may carry text in more than one orientation (e.g. a side
         // panel printed perpendicular to the front), so run a pass per
@@ -71,9 +79,9 @@ class TextReader {
                 Log.d(TAG, "ocr: $alnum alnum chars, sharpness=%.1f, ${ms}ms".format(sharpness))
                 onText(text)
             } else {
-                Log.d(TAG, "rejected: $alnum alnum chars, ${ms}ms")
+                Log.d(TAG, "fail: $alnum alnum chars, ${ms}ms")
+                onFail(FailReason.NO_TEXT)
             }
-            lastOcrAt = SystemClock.elapsedRealtime()
             inFlight.set(false)
             crop.recycle()
         }
@@ -167,7 +175,6 @@ class TextReader {
 
     companion object {
         private const val TAG = "TextReader"
-        private const val MIN_INTERVAL_MS = 1500L
         private const val PAD_FRACTION = 0.10f
         private const val MIN_CROP_W = 100
         private const val MIN_CROP_H = 60
