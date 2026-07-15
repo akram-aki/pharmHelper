@@ -219,16 +219,24 @@ class VignetteParser(private val context: Context) {
         var exp: ParsedDate? = null
         val unlabeled = mutableListOf<ParsedDate>()
 
-        for (line in lines) {
+        for (rawLine in lines) {
+            // Accent-stripped copy (same length) so PÉREMPTION, FÉV, AOÛT, DÉC match.
+            val line = stripAccents(rawLine)
             val taken = mutableListOf<IntRange>()
             val tokens = mutableListOf<Pair<IntRange, ParsedDate?>>()
             for (m in DATE_FULL.findAll(line)) {
                 taken.add(m.range)
-                tokens.add(m.range to parseDate(m.groupValues[1], m.groupValues[2], m.groupValues[3]))
+                tokens.add(m.range to parseDate(m.groupValues[1], m.groupValues[2].toIntOrNull(), m.groupValues[3]))
+            }
+            for (m in DATE_MONTH_NAME.findAll(line)) {
+                if (taken.any { it.first <= m.range.last && m.range.first <= it.last }) continue
+                taken.add(m.range)
+                val month = MONTH_NAMES[m.groupValues[2].uppercase()]
+                tokens.add(m.range to parseDate(m.groupValues[1].ifEmpty { null }, month, m.groupValues[3]))
             }
             for (m in DATE_MY.findAll(line)) {
                 if (taken.any { it.first <= m.range.last && m.range.first <= it.last }) continue
-                tokens.add(m.range to parseDate(null, m.groupValues[1], m.groupValues[2]))
+                tokens.add(m.range to parseDate(null, m.groupValues[1].toIntOrNull(), m.groupValues[2]))
             }
 
             for ((range, parsed) in tokens) {
@@ -255,10 +263,12 @@ class VignetteParser(private val context: Context) {
         return fab?.formatted() to exp?.formatted()
     }
 
+    private fun stripAccents(s: String): String =
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+
     /** Validates and normalizes; day is null for month/year tokens. */
-    private fun parseDate(dayStr: String?, monthStr: String, yearStr: String): ParsedDate? {
-        val month = monthStr.toIntOrNull() ?: return null
-        if (month !in 1..12) return null
+    private fun parseDate(dayStr: String?, month: Int?, yearStr: String): ParsedDate? {
+        if (month == null || month !in 1..12) return null
         var year = yearStr.toIntOrNull() ?: return null
         when (yearStr.length) {
             2 -> {
@@ -412,6 +422,17 @@ class VignetteParser(private val context: Context) {
         private val MONEY_WITH_DA = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:DA|DZD)\b""", RegexOption.IGNORE_CASE)
         private val DATE_FULL = Regex("""\b(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{2,4})\b""")
         private val DATE_MY = Regex("""\b(\d{1,2})\s*[/.\-]\s*(\d{2,4})\b""")
+        // "OCT 2028", "15 OCT 28", "OCT-2028", "AOUT 2027" — French + English
+        // abbreviations; JUIL before JUL/JUN so juillet doesn't match juin.
+        private val DATE_MONTH_NAME = Regex(
+            """\b(?:(\d{1,2})\s*[/.\-\s]\s*)?(JAN|FEV|FEB|MAR|AVR|APR|MAI|MAY|JUIL|JUIN|JUL|JUN|AOU|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s*[/.\-\s]?\s*(\d{2,4})\b""",
+            RegexOption.IGNORE_CASE
+        )
+        private val MONTH_NAMES = mapOf(
+            "JAN" to 1, "FEV" to 2, "FEB" to 2, "MAR" to 3, "AVR" to 4, "APR" to 4,
+            "MAI" to 5, "MAY" to 5, "JUIN" to 6, "JUN" to 6, "JUIL" to 7, "JUL" to 7,
+            "AOU" to 8, "AUG" to 8, "SEP" to 9, "OCT" to 10, "NOV" to 11, "DEC" to 12
+        )
         // Anchored to the end of the text preceding the date token: the label
         // must sit directly before the date ("EXP 11/27 FAB 11/24" resolves
         // each token to its own label).
