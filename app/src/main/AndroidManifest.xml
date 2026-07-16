@@ -13,13 +13,14 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@drawable/logo"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.BoxDetector">
+        android:theme="@style/Theme.PharmaHelper">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".HomeActivity"
             android:exported="true"
             android:screenOrientation="portrait">
             <intent-filter>
@@ -27,6 +28,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:parentActivityName=".HomeActivity"
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".TextActivity"

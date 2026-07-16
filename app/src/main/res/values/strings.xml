@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Box Detector</string>
-    <string name="camera_permission_denied">Camera permission is required for this app to work.</string>
+    <string name="app_name">Pharma Helper</string>
+    <string name="camera_permission_denied">L\'autorisation caméra est nécessaire pour utiliser le scanner.</string>
     <string name="scan_button">Scanner</string>
     <string name="scanning">Scan…</string>
     <string name="toast_no_box">Aucune vignette détectée — visez la vignette verte</string>
     <string name="toast_too_small">Trop petit — rapprochez-vous</string>
     <string name="toast_blurry">Image floue — tenez le téléphone stable</string>
     <string name="toast_no_text">Aucun texte lisible — réessayez</string>
-    <string name="extracted_text_title">Extracted text</string>
-    <string name="no_text_yet">No text has been extracted yet. Point the camera at a box and hold steady.</string>
+    <string name="extracted_text_title">Résultat du scan</string>
+    <string name="no_text_yet">Aucun texte extrait. Visez la vignette et maintenez le téléphone stable.</string>
     <string name="field_name">Médicament</string>
     <string name="field_dosage">Dosage</string>
     <string name="field_cond">Conditionnement</string>
@@ -33,4 +33,10 @@
     <string name="quantity_invalid">Entrez une quantité valide</string>
     <string name="edit_button">Modifier</string>
     <string name="edit_date_hint">MM/AAAA</string>
+    <string name="home_subtitle">Votre assistant de pharmacie</string>
+    <string name="service_perime_title">Scan périmés</string>
+    <string name="service_perime_desc">Scanner les vignettes des médicaments périmés</string>
+    <string name="service_facture_title">Scan factures</string>
+    <string name="service_more_title">Autres services</string>
+    <string name="coming_soon">Bientôt disponible</string>
 </resources>
