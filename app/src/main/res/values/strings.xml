@@ -31,4 +31,6 @@
     <string name="saved_uploading">Enregistré — envoi en cours</string>
     <string name="not_configured">Envoi non configuré — enregistré localement</string>
     <string name="quantity_invalid">Entrez une quantité valide</string>
+    <string name="edit_button">Modifier</string>
+    <string name="edit_date_hint">MM/AAAA</string>
 </resources>

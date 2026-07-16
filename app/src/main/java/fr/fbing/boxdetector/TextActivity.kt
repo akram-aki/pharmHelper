@@ -53,6 +53,8 @@ class TextActivity : AppCompatActivity() {
         rebuildFields(name)
 
         findViewById<View>(R.id.btn_next).setOnClickListener { showQuantityDialog() }
+        wireDateEdit(R.id.btn_edit_fab, R.id.field_fab_value, R.string.field_fab_date)
+        wireDateEdit(R.id.btn_edit_exp, R.id.field_exp_value, R.string.field_exp_date)
 
         findViewById<TextView>(R.id.field_ppa_value).text =
             intent.getStringExtra(EXTRA_PPA) ?: PLACEHOLDER
@@ -142,6 +144,36 @@ class TextActivity : AppCompatActivity() {
                 ?: return@setOnCheckedChangeListener
             valueView.text = field.options[index]
             onValue(field.options[index])
+        }
+    }
+
+    /** Lets the user type or correct a date the OCR missed or misread. */
+    private fun wireDateEdit(buttonId: Int, valueId: Int, titleRes: Int) {
+        val valueView = findViewById<TextView>(valueId)
+        findViewById<View>(buttonId).setOnClickListener {
+            val input = EditText(this).apply {
+                inputType = InputType.TYPE_CLASS_TEXT
+                hint = getString(R.string.edit_date_hint)
+                val current = valueView.text.toString()
+                if (current != PLACEHOLDER) {
+                    setText(current)
+                    setSelection(current.length)
+                }
+            }
+            val container = FrameLayout(this).apply {
+                val pad = (20 * resources.displayMetrics.density).toInt()
+                setPadding(pad, pad / 2, pad, 0)
+                addView(input)
+            }
+            MaterialAlertDialogBuilder(this)
+                .setTitle(titleRes)
+                .setView(container)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.confirm) { _, _ ->
+                    val text = input.text.toString().trim()
+                    valueView.text = text.ifEmpty { PLACEHOLDER }
+                }
+                .show()
         }
     }
 
