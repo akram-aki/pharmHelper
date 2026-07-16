@@ -96,8 +96,11 @@ object UploadQueue {
             )
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
+        // REPLACE (not APPEND_OR_REPLACE): each enqueue/app-start cancels any
+        // backed-off retry and attempts immediately — APPEND chains wedge on
+        // MIUI when a member sits in retry limbo.
         WorkManager.getInstance(context)
-            .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+            .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request)
     }
 
     private fun queueFile(context: Context) = File(context.filesDir, QUEUE_FILE)

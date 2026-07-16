@@ -18,6 +18,7 @@ google-services.json
 app/src/main/assets/sheets_config.json
 pharmaapp-*-*.json
 sheets_config_secret.json
+appsscript_upload.gs
 firebase-key.json
 *-service-account*.json
 keystore.properties
