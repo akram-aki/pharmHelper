@@ -261,8 +261,9 @@ class VignetteParser(private val context: Context) {
         val unlabeled = mutableListOf<ParsedDate>()
 
         for (rawLine in lines) {
-            // Accent-stripped copy (same length) so PÉREMPTION, FÉV, AOÛT, DÉC match.
-            val line = stripAccents(rawLine)
+            // Accent-stripped + OCR-confusion-fixed copy (same length, so match
+            // ranges still align): 0CT -> OCT, 1O/28 -> 10/28, 3XP -> EXP...
+            val line = fixOcrConfusions(stripAccents(rawLine))
             val taken = mutableListOf<IntRange>()
             val tokens = mutableListOf<Pair<IntRange, ParsedDate?>>()
             for (m in DATE_FULL.findAll(line)) {
@@ -306,6 +307,31 @@ class VignetteParser(private val context: Context) {
 
     private fun stripAccents(s: String): String =
         Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+
+    /**
+     * Repairs common OCR letter/digit swaps using each token's dominant type:
+     * digits inside letter-dominant words become letters (0CT -> OCT,
+     * 5EPT -> SEPT) and letters inside digit-dominant tokens become digits
+     * (1O -> 10, 2O28 -> 2028). Length-preserving.
+     */
+    private fun fixOcrConfusions(line: String): String {
+        val out = StringBuilder(line)
+        for (m in WORD_TOKEN.findAll(line)) {
+            val token = m.value
+            val letters = token.count { it.isLetter() }
+            val digits = token.count { it.isDigit() }
+            if (letters >= 2 && letters > digits) {
+                for (i in m.range) {
+                    LETTER_FOR_DIGIT[line[i]]?.let { out.setCharAt(i, it) }
+                }
+            } else if (digits >= 1 && digits >= letters) {
+                for (i in m.range) {
+                    DIGIT_FOR_LETTER[line[i]]?.let { out.setCharAt(i, it) }
+                }
+            }
+        }
+        return out.toString()
+    }
 
     /** Validates and normalizes; day is null for month/year tokens. */
     private fun parseDate(dayStr: String?, month: Int?, yearStr: String): ParsedDate? {
@@ -475,6 +501,16 @@ class VignetteParser(private val context: Context) {
             "JAN" to 1, "FEV" to 2, "FEB" to 2, "MAR" to 3, "AVR" to 4, "APR" to 4,
             "MAI" to 5, "MAY" to 5, "JUIN" to 6, "JUN" to 6, "JUIL" to 7, "JUL" to 7,
             "AOU" to 8, "AUG" to 8, "SEP" to 9, "OCT" to 10, "NOV" to 11, "DEC" to 12
+        )
+
+        private val WORD_TOKEN = Regex("""[A-Za-z0-9]+""")
+        // OCR glyph confusions, applied by token context in fixOcrConfusions.
+        private val LETTER_FOR_DIGIT = mapOf(
+            '0' to 'O', '1' to 'I', '3' to 'E', '4' to 'A', '5' to 'S', '8' to 'B'
+        )
+        private val DIGIT_FOR_LETTER = mapOf(
+            'O' to '0', 'o' to '0', 'I' to '1', 'i' to '1', 'l' to '1',
+            'S' to '5', 's' to '5', 'B' to '8', 'Z' to '2', 'z' to '2'
         )
         // Anchored to the end of the text preceding the date token: the label
         // must sit directly before the date ("EXP 11/27 FAB 11/24" resolves
