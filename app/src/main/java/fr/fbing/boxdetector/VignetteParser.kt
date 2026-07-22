@@ -270,10 +270,10 @@ class VignetteParser(private val context: Context) {
                 taken.add(m.range)
                 tokens.add(m.range to parseDate(m.groupValues[1], m.groupValues[2].toIntOrNull(), m.groupValues[3]))
             }
-            for (m in DATE_MONTH_NAME.findAll(line)) {
+            for (m in DATE_MONTH_TOKEN.findAll(line)) {
                 if (taken.any { it.first <= m.range.last && m.range.first <= it.last }) continue
+                val month = matchMonthFuzzy(m.groupValues[2]) ?: continue
                 taken.add(m.range)
-                val month = MONTH_NAMES[m.groupValues[2].uppercase()]
                 tokens.add(m.range to parseDate(m.groupValues[1].ifEmpty { null }, month, m.groupValues[3]))
             }
             for (m in DATE_MY.findAll(line)) {
@@ -303,6 +303,26 @@ class VignetteParser(private val context: Context) {
             exp == null && fab != null && unlabeled.size == 1 -> exp = unlabeled[0]
         }
         return fab?.formatted() to exp?.formatted()
+    }
+
+    /**
+     * Resolves a possibly-garbled month token by nearest match against the
+     * month names (French + English, abbreviations and full forms). Tolerates
+     * OCR dropping or mangling a letter — JL -> JUL (July), OCTOBHE -> OCTOBRE.
+     */
+    private fun matchMonthFuzzy(token: String): Int? {
+        val t = token.uppercase()
+        if (t.length < 2) return null
+        var bestMonth: Int? = null
+        var bestSim = 0f
+        for ((candidate, month) in MONTH_CANDIDATES) {
+            val sim = similarity(t, candidate)
+            if (sim > bestSim) {
+                bestSim = sim
+                bestMonth = month
+            }
+        }
+        return if (bestSim >= MONTH_MIN_SIM) bestMonth else null
     }
 
     private fun stripAccents(s: String): String =
@@ -491,17 +511,29 @@ class VignetteParser(private val context: Context) {
         private val MONEY_WITH_DA = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:DA|DZD)\b""", RegexOption.IGNORE_CASE)
         private val DATE_FULL = Regex("""\b(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{2,4})\b""")
         private val DATE_MY = Regex("""\b(\d{1,2})\s*[/.\-]\s*(\d{2,4})\b""")
-        // "OCT 2028", "15 OCT 28", "OCT-2028", "AOUT 2027" — French + English
-        // abbreviations; JUIL before JUL/JUN so juillet doesn't match juin.
-        private val DATE_MONTH_NAME = Regex(
-            """\b(?:(\d{1,2})\s*[/.\-\s]\s*)?(JAN|FEV|FEB|MAR|AVR|APR|MAI|MAY|JUIL|JUIN|JUL|JUN|AOU|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s*[/.\-\s]?\s*(\d{2,4})\b""",
-            RegexOption.IGNORE_CASE
+        // A month-like letter run (2-9 letters) adjacent to a year, with an
+        // optional leading day. The run is resolved fuzzily by matchMonthFuzzy,
+        // so OCR misspellings (JL, 0CT after repair, OCTOBHE) still match.
+        private val DATE_MONTH_TOKEN = Regex(
+            """\b(?:(\d{1,2})\s*[/.\-\s]\s*)?([A-Za-z]{2,9})\.?\s*[/.\-\s]?\s*(\d{2,4})\b"""
         )
-        private val MONTH_NAMES = mapOf(
-            "JAN" to 1, "FEV" to 2, "FEB" to 2, "MAR" to 3, "AVR" to 4, "APR" to 4,
-            "MAI" to 5, "MAY" to 5, "JUIN" to 6, "JUN" to 6, "JUIL" to 7, "JUL" to 7,
-            "AOU" to 8, "AUG" to 8, "SEP" to 9, "OCT" to 10, "NOV" to 11, "DEC" to 12
+        // Candidate (spelling -> month); abbreviations and full names, FR + EN.
+        // Duplicates per month are fine — matchMonthFuzzy only needs the number.
+        private val MONTH_CANDIDATES = listOf(
+            "JAN" to 1, "JANV" to 1, "JANVIER" to 1, "JANUARY" to 1,
+            "FEV" to 2, "FEB" to 2, "FEVR" to 2, "FEVRIER" to 2, "FEBRUARY" to 2,
+            "MAR" to 3, "MARS" to 3, "MARCH" to 3,
+            "AVR" to 4, "APR" to 4, "AVRIL" to 4, "APRIL" to 4,
+            "MAI" to 5, "MAY" to 5,
+            "JUIN" to 6, "JUN" to 6, "JUNE" to 6,
+            "JUIL" to 7, "JUL" to 7, "JUILLET" to 7, "JULY" to 7,
+            "AOU" to 8, "AOUT" to 8, "AUG" to 8, "AUGUST" to 8,
+            "SEP" to 9, "SEPT" to 9, "SEPTEMBRE" to 9, "SEPTEMBER" to 9,
+            "OCT" to 10, "OCTOBRE" to 10, "OCTOBER" to 10,
+            "NOV" to 11, "NOVEMBRE" to 11, "NOVEMBER" to 11,
+            "DEC" to 12, "DECEMBRE" to 12, "DECEMBER" to 12
         )
+        private const val MONTH_MIN_SIM = 0.6f
 
         private val WORD_TOKEN = Regex("""[A-Za-z0-9]+""")
         // OCR glyph confusions, applied by token context in fixOcrConfusions.
