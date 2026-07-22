@@ -161,9 +161,9 @@ class TextReader {
     }
 
     /**
-     * Crops one vertical edge strip of the vignette, extending outward beyond
-     * the box (the date often sits just off the sticker) and upscaled for the
-     * small text. Null if the clamped strip is degenerate.
+     * Crops an inner vertical band along one edge of the vignette, where the
+     * expiration date is printed sideways (inside the sticker, not off it).
+     * Upscaled for the small text. Null if the clamped strip is degenerate.
      */
     private fun buildStrip(source: Bitmap, box: RectF, left: Boolean): Bitmap? {
         val inward = box.width() * STRIP_WIDTH_FRACTION
@@ -262,10 +262,10 @@ class TextReader {
         private const val MIN_READABLE_SIDE = 300
         private const val MAX_UPSCALE = 3f
 
-        // Vertical edge strips carrying the expiration date.
-        private const val STRIP_WIDTH_FRACTION = 0.30f    // inward from edge × box width
-        private const val STRIP_OUTWARD_FRACTION = 0.12f  // outward beyond edge × box width
-        private const val STRIP_VPAD_FRACTION = 0.06f     // beyond top & bottom × box height
+        // Inner vertical bands (inside the sticker) carrying the sideways date.
+        private const val STRIP_WIDTH_FRACTION = 0.40f    // inward from edge × box width
+        private const val STRIP_OUTWARD_FRACTION = 0f     // stay inside the sticker
+        private const val STRIP_VPAD_FRACTION = 0f        // span the box height, no overflow
         private const val STRIP_MIN_READABLE_SIDE = 320
         private const val STRIP_MAX_UPSCALE = 5f
         private const val STRIP_MIN_DIM = 24
