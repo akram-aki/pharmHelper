@@ -238,9 +238,9 @@ class MainActivity : AppCompatActivity() {
     private fun runOcr(source: Bitmap, box: RectF) {
         textReader.read(
             source, box,
-            onText = { text ->
+            onResult = { ocr ->
                 cameraExecutor.execute {
-                    val info = parser.parse(text)
+                    val info = parser.parse(ocr)
                     runOnUiThread {
                         setScanning(false)
                         showResult(info)

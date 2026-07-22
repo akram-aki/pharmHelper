@@ -51,6 +51,8 @@ data class VignetteInfo(
  */
 class VignetteParser(private val context: Context) {
 
+    private val dateExtractor = DateExtractor()
+
     private val dictionary: List<String> by lazy {
         val start = System.currentTimeMillis()
         val names = context.assets.open(DICT_ASSET).bufferedReader().readLines()
@@ -60,11 +62,25 @@ class VignetteParser(private val context: Context) {
         names
     }
 
-    fun parse(rawText: String): VignetteInfo {
-        val lines = rawText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    /** Primary entry: structured OCR (incl. edge strips) drives date extraction. */
+    fun parse(ocr: OcrResult): VignetteInfo {
+        val lines = ocr.mergedText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val (fabDate, expDate) = dateExtractor.extract(ocr.lines)
+        return assemble(lines, fabDate, expDate, ocr.mergedText)
+    }
 
+    /** Back-compat: flat string; dates come from synthetic single-frame lines. */
+    fun parse(rawText: String): VignetteInfo {
+        val synthetic = rawText.lines()
+            .mapIndexed { i, t -> OcrLine(t.trim(), TextBox(0, i * 10, 1, i * 10 + 1), null, OcrRegion.FULL, 0) }
+            .filter { it.text.isNotEmpty() }
+        val (fabDate, expDate) = dateExtractor.extract(synthetic)
+        val lines = rawText.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        return assemble(lines, fabDate, expDate, rawText)
+    }
+
+    private fun assemble(lines: List<String>, fabDate: String?, expDate: String?, rawText: String): VignetteInfo {
         val ppa = extractPpa(lines)
-        val (fabDate, expDate) = extractDates(lines)
         val nameResult = extractName(lines)
         val (dosage, cond, forme) = matchFieldsInternal(lines, nameResult.name)
 
@@ -179,13 +195,6 @@ class VignetteParser(private val context: Context) {
     /** Dots and spaces are formatting noise in formes (COMP. vs COMP). */
     private fun canonForme(s: String): String = canonCompact(s).replace(".", "")
 
-    private fun similarity(a: String, b: String): Float {
-        if (a == b) return 1f
-        val maxLen = max(a.length, b.length)
-        if (maxLen == 0) return 0f
-        return 1f - levenshtein(a, b).toFloat() / maxLen
-    }
-
     private fun dosageTokens(lines: List<String>): List<String> =
         lines.flatMap { line ->
             DOSAGE_FULL.findAll(line).map { it.value.uppercase().replace(Regex("\\s+"), "") }
@@ -240,135 +249,6 @@ class VignetteParser(private val context: Context) {
 
     private fun formatMoney(num: String) = "${num.replace(',', '.')} DA"
 
-    // --------------------------------------------------------------- Dates
-
-    private class ParsedDate(val day: Int?, val month: Int, val year: Int) {
-        fun key() = year * 100 + month
-        fun formatted() =
-            if (day != null) "%02d/%02d/%d".format(day, month, year)
-            else "%02d/%d".format(month, year)
-    }
-
-    /**
-     * Every sticker prints dates its own way ("exp : 11-27", "date exp: 5/2027",
-     * "PER. 11/2027"); labels win, otherwise two plausible dates are ordered
-     * chronologically, and a single unlabeled date is assumed to be the
-     * expiration (the date stickers emphasize).
-     */
-    private fun extractDates(lines: List<String>): Pair<String?, String?> {
-        var fab: ParsedDate? = null
-        var exp: ParsedDate? = null
-        val unlabeled = mutableListOf<ParsedDate>()
-
-        for (rawLine in lines) {
-            // Accent-stripped + OCR-confusion-fixed copy (same length, so match
-            // ranges still align): 0CT -> OCT, 1O/28 -> 10/28, 3XP -> EXP...
-            val line = fixOcrConfusions(stripAccents(rawLine))
-            val taken = mutableListOf<IntRange>()
-            val tokens = mutableListOf<Pair<IntRange, ParsedDate?>>()
-            for (m in DATE_FULL.findAll(line)) {
-                taken.add(m.range)
-                tokens.add(m.range to parseDate(m.groupValues[1], m.groupValues[2].toIntOrNull(), m.groupValues[3]))
-            }
-            for (m in DATE_MONTH_TOKEN.findAll(line)) {
-                if (taken.any { it.first <= m.range.last && m.range.first <= it.last }) continue
-                val month = matchMonthFuzzy(m.groupValues[2]) ?: continue
-                taken.add(m.range)
-                tokens.add(m.range to parseDate(m.groupValues[1].ifEmpty { null }, month, m.groupValues[3]))
-            }
-            for (m in DATE_MY.findAll(line)) {
-                if (taken.any { it.first <= m.range.last && m.range.first <= it.last }) continue
-                tokens.add(m.range to parseDate(null, m.groupValues[1].toIntOrNull(), m.groupValues[2]))
-            }
-
-            for ((range, parsed) in tokens) {
-                parsed ?: continue
-                val before = line.substring(0, range.first)
-                when {
-                    FAB_LABEL.containsMatchIn(before) -> if (fab == null) fab = parsed
-                    EXP_LABEL.containsMatchIn(before) -> if (exp == null) exp = parsed
-                    else -> unlabeled.add(parsed)
-                }
-            }
-        }
-
-        when {
-            fab == null && exp == null && unlabeled.size == 2 -> {
-                val sorted = unlabeled.sortedBy { it.key() }
-                fab = sorted[0]
-                exp = sorted[1]
-            }
-            fab == null && exp == null && unlabeled.size == 1 -> exp = unlabeled[0]
-            fab == null && exp != null && unlabeled.size == 1 -> fab = unlabeled[0]
-            exp == null && fab != null && unlabeled.size == 1 -> exp = unlabeled[0]
-        }
-        return fab?.formatted() to exp?.formatted()
-    }
-
-    /**
-     * Resolves a possibly-garbled month token by nearest match against the
-     * month names (French + English, abbreviations and full forms). Tolerates
-     * OCR dropping or mangling a letter — JL -> JUL (July), OCTOBHE -> OCTOBRE.
-     */
-    private fun matchMonthFuzzy(token: String): Int? {
-        val t = token.uppercase()
-        if (t.length < 2) return null
-        var bestMonth: Int? = null
-        var bestSim = 0f
-        for ((candidate, month) in MONTH_CANDIDATES) {
-            val sim = similarity(t, candidate)
-            if (sim > bestSim) {
-                bestSim = sim
-                bestMonth = month
-            }
-        }
-        return if (bestSim >= MONTH_MIN_SIM) bestMonth else null
-    }
-
-    private fun stripAccents(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
-
-    /**
-     * Repairs common OCR letter/digit swaps using each token's dominant type:
-     * digits inside letter-dominant words become letters (0CT -> OCT,
-     * 5EPT -> SEPT) and letters inside digit-dominant tokens become digits
-     * (1O -> 10, 2O28 -> 2028). Length-preserving.
-     */
-    private fun fixOcrConfusions(line: String): String {
-        val out = StringBuilder(line)
-        for (m in WORD_TOKEN.findAll(line)) {
-            val token = m.value
-            val letters = token.count { it.isLetter() }
-            val digits = token.count { it.isDigit() }
-            if (letters >= 2 && letters > digits) {
-                for (i in m.range) {
-                    LETTER_FOR_DIGIT[line[i]]?.let { out.setCharAt(i, it) }
-                }
-            } else if (digits >= 1 && digits >= letters) {
-                for (i in m.range) {
-                    DIGIT_FOR_LETTER[line[i]]?.let { out.setCharAt(i, it) }
-                }
-            }
-        }
-        return out.toString()
-    }
-
-    /** Validates and normalizes; day is null for month/year tokens. */
-    private fun parseDate(dayStr: String?, month: Int?, yearStr: String): ParsedDate? {
-        if (month == null || month !in 1..12) return null
-        var year = yearStr.toIntOrNull() ?: return null
-        when (yearStr.length) {
-            2 -> {
-                if (year !in TWO_DIGIT_YEAR_MIN..TWO_DIGIT_YEAR_MAX) return null
-                year += 2000
-            }
-            4 -> if (year !in 2000..2099) return null
-            else -> return null
-        }
-        val day = dayStr?.toIntOrNull()?.also { if (it !in 1..31) return null }
-        return ParsedDate(day, month, year)
-    }
-
     // ---------------------------------------------------------------- Name
 
     private class NameResult(
@@ -382,7 +262,7 @@ class VignetteParser(private val context: Context) {
         val candidateLines = lines
             .filter { line ->
                 !PPA_LABEL.containsMatchIn(line) &&
-                    !DATE_MY.containsMatchIn(line) &&
+                    !DATE_LIKE.containsMatchIn(line) &&
                     !LOT_LABEL.containsMatchIn(line)
             }
             .map { it to scoreCandidate(it) }
@@ -466,21 +346,6 @@ class VignetteParser(private val context: Context) {
         return score
     }
 
-    private fun levenshtein(a: String, b: String): Int {
-        if (a == b) return 0
-        val prev = IntArray(b.length + 1) { it }
-        val curr = IntArray(b.length + 1)
-        for (i in 1..a.length) {
-            curr[0] = i
-            for (j in 1..b.length) {
-                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
-                curr[j] = min(min(curr[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost)
-            }
-            prev.indices.forEach { prev[it] = curr[it] }
-        }
-        return prev[b.length]
-    }
-
     private fun normalize(s: String): String =
         Normalizer.normalize(s, Normalizer.Form.NFD)
             .replace(Regex("\\p{Mn}+"), "")
@@ -503,52 +368,12 @@ class VignetteParser(private val context: Context) {
         private const val FALLBACK_CONFIDENCE = 50
         // Below this best-catalog similarity, the raw OCR reading is offered too.
         private const val OCR_OPTION_SIM = 0.75f
-        private const val TWO_DIGIT_YEAR_MIN = 20
-        private const val TWO_DIGIT_YEAR_MAX = 39
 
         private val PPA_LABEL = Regex("""P\.?\s*P\.?\s*A""", RegexOption.IGNORE_CASE)
         private val MONEY = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:DA|DZD)?""")
         private val MONEY_WITH_DA = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:DA|DZD)\b""", RegexOption.IGNORE_CASE)
-        private val DATE_FULL = Regex("""\b(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{2,4})\b""")
-        private val DATE_MY = Regex("""\b(\d{1,2})\s*[/.\-]\s*(\d{2,4})\b""")
-        // A month-like letter run (2-9 letters) adjacent to a year, with an
-        // optional leading day. The run is resolved fuzzily by matchMonthFuzzy,
-        // so OCR misspellings (JL, 0CT after repair, OCTOBHE) still match.
-        private val DATE_MONTH_TOKEN = Regex(
-            """\b(?:(\d{1,2})\s*[/.\-\s]\s*)?([A-Za-z]{2,9})\.?\s*[/.\-\s]?\s*(\d{2,4})\b"""
-        )
-        // Candidate (spelling -> month); abbreviations and full names, FR + EN.
-        // Duplicates per month are fine — matchMonthFuzzy only needs the number.
-        private val MONTH_CANDIDATES = listOf(
-            "JAN" to 1, "JANV" to 1, "JANVIER" to 1, "JANUARY" to 1,
-            "FEV" to 2, "FEB" to 2, "FEVR" to 2, "FEVRIER" to 2, "FEBRUARY" to 2,
-            "MAR" to 3, "MARS" to 3, "MARCH" to 3,
-            "AVR" to 4, "APR" to 4, "AVRIL" to 4, "APRIL" to 4,
-            "MAI" to 5, "MAY" to 5,
-            "JUIN" to 6, "JUN" to 6, "JUNE" to 6,
-            "JUIL" to 7, "JUL" to 7, "JUILLET" to 7, "JULY" to 7,
-            "AOU" to 8, "AOUT" to 8, "AUG" to 8, "AUGUST" to 8,
-            "SEP" to 9, "SEPT" to 9, "SEPTEMBRE" to 9, "SEPTEMBER" to 9,
-            "OCT" to 10, "OCTOBRE" to 10, "OCTOBER" to 10,
-            "NOV" to 11, "NOVEMBRE" to 11, "NOVEMBER" to 11,
-            "DEC" to 12, "DECEMBRE" to 12, "DECEMBER" to 12
-        )
-        private const val MONTH_MIN_SIM = 0.6f
-
-        private val WORD_TOKEN = Regex("""[A-Za-z0-9]+""")
-        // OCR glyph confusions, applied by token context in fixOcrConfusions.
-        private val LETTER_FOR_DIGIT = mapOf(
-            '0' to 'O', '1' to 'I', '3' to 'E', '4' to 'A', '5' to 'S', '8' to 'B'
-        )
-        private val DIGIT_FOR_LETTER = mapOf(
-            'O' to '0', 'o' to '0', 'I' to '1', 'i' to '1', 'l' to '1',
-            'S' to '5', 's' to '5', 'B' to '8', 'Z' to '2', 'z' to '2'
-        )
-        // Anchored to the end of the text preceding the date token: the label
-        // must sit directly before the date ("EXP 11/27 FAB 11/24" resolves
-        // each token to its own label).
-        private val FAB_LABEL = Regex("""\b(?:DATE\s*)?(?:FAB\w*|MFG|PROD\w*)\s*[:. ]*$""", RegexOption.IGNORE_CASE)
-        private val EXP_LABEL = Regex("""\b(?:DATE\s*)?(?:EXP\w*|PER\w*|PEREMPTION)\s*[:. ]*$""", RegexOption.IGNORE_CASE)
+        // Numeric date shape — only used to keep date lines out of name candidates.
+        private val DATE_LIKE = Regex("""\d{1,2}\s*[/.\-]\s*\d{2,4}""")
         private val LOT_LABEL = Regex("""\bLOT\b|\bBATCH\b|N[°o]\s""", RegexOption.IGNORE_CASE)
         private val DOSAGE = Regex("""\b\d+(?:[.,]\d+)?\s?(MG|G|ML|UI|%|MCG|µG)\b""", RegexOption.IGNORE_CASE)
         private val DOSAGE_FULL = Regex(

@@ -14,9 +14,12 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * On-demand ML Kit text recognition on a detected box region. The crop must
- * look readable (big enough, sharp enough) or the read fails fast with a
- * reason the UI can show. One read runs at a time.
+ * On-demand ML Kit text recognition on a detected vignette region. Runs the
+ * full crop at three rotations for the main text, plus the left/right edge
+ * strips (where the expiration date is printed vertically) in isolation so the
+ * small side-text is read cleanly instead of competing with sideways main text.
+ * Returns structured lines (text + box + confidence + region) so the parser can
+ * reason about geometry. One read runs at a time.
  */
 class TextReader {
 
@@ -25,15 +28,17 @@ class TextReader {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val inFlight = AtomicBoolean(false)
 
+    private class Pass(val bitmap: Bitmap, val rotation: Int, val region: OcrRegion)
+
     /**
-     * Crops [box] out of [source] and runs OCR. [onText] receives the merged
-     * text on the main thread; [onFail] the reason (gate failures fire on the
-     * caller thread, recognition failures on the main thread).
+     * OCRs [box] within [source]. [onResult] receives structured OCR output on
+     * the main thread; [onFail] the reason (the size/blur gates fire on the
+     * caller thread, recognition on the main thread).
      */
     fun read(
         source: Bitmap,
         box: RectF,
-        onText: (String) -> Unit,
+        onResult: (OcrResult) -> Unit,
         onFail: (FailReason) -> Unit
     ) {
         if (!inFlight.compareAndSet(false, true)) {
@@ -68,84 +73,134 @@ class TextReader {
             return
         }
 
-        val crop = ensureReadable(rawCrop)
+        val crop = ensureReadable(rawCrop, MIN_READABLE_SIDE, MAX_UPSCALE)
+        val leftStrip = buildStrip(source, box, left = true)
+        val rightStrip = buildStrip(source, box, left = false)
+
+        // FULL crop at 3 rotations (main text) + each strip at 90 and 270
+        // (the date is printed 90° off; running both undoes either direction).
+        val passes = buildList {
+            add(Pass(crop, 0, OcrRegion.FULL))
+            add(Pass(crop, 90, OcrRegion.FULL))
+            add(Pass(crop, 270, OcrRegion.FULL))
+            leftStrip?.let { add(Pass(it, 90, OcrRegion.LEFT_STRIP)); add(Pass(it, 270, OcrRegion.LEFT_STRIP)) }
+            rightStrip?.let { add(Pass(it, 90, OcrRegion.RIGHT_STRIP)); add(Pass(it, 270, OcrRegion.RIGHT_STRIP)) }
+        }
 
         val start = SystemClock.elapsedRealtime()
-        // The box may carry text in more than one orientation (e.g. a side
-        // panel printed perpendicular to the front), so run a pass per
-        // rotation and merge the lines.
-        recognizeRotations(crop, 0, mutableListOf()) { lines ->
-            val text = mergeLines(lines)
-            val alnum = text.count { it.isLetterOrDigit() }
+        val collected = mutableListOf<OcrLine>()
+        runPasses(passes, 0, collected) {
+            val mergedText = mergeFull(collected)
+            val alnum = mergedText.count { it.isLetterOrDigit() }
             val ms = SystemClock.elapsedRealtime() - start
+            crop.recycle()
+            leftStrip?.recycle()
+            rightStrip?.recycle()
+            inFlight.set(false)
             if (alnum >= MIN_ACCEPT_CHARS) {
-                Log.d(TAG, "ocr: $alnum alnum chars, sharpness=%.1f, ${ms}ms".format(sharpness))
-                onText(text)
+                Log.d(TAG, "ocr: $alnum alnum chars, ${collected.size} lines, ${passes.size} passes, ${ms}ms")
+                onResult(OcrResult(mergedText, collected))
             } else {
                 Log.d(TAG, "fail: $alnum alnum chars, ${ms}ms")
                 onFail(FailReason.NO_TEXT)
             }
-            inFlight.set(false)
-            crop.recycle()
         }
     }
 
-    /**
-     * ML Kit reads small text poorly; upscale (bilinear, at most ×3) so the
-     * crop's short side is at least [MIN_READABLE_SIDE] px. Recycles the
-     * input when a new bitmap is produced.
-     */
-    private fun ensureReadable(crop: Bitmap): Bitmap {
-        val shortSide = min(crop.width, crop.height)
-        if (shortSide >= MIN_READABLE_SIDE) return crop
-        val factor = min(MAX_UPSCALE, MIN_READABLE_SIDE.toFloat() / shortSide)
-        val scaled = Bitmap.createScaledBitmap(
-            crop,
-            (crop.width * factor).roundToInt(),
-            (crop.height * factor).roundToInt(),
-            true
-        )
-        Log.d(TAG, "upscaled crop x%.1f to ${scaled.width}x${scaled.height}".format(factor))
-        crop.recycle()
-        return scaled
-    }
-
-    /** Runs the recognizer once per entry in [ROTATIONS], accumulating raw lines. */
-    private fun recognizeRotations(
-        crop: Bitmap,
+    private fun runPasses(
+        passes: List<Pass>,
         index: Int,
-        lines: MutableList<String>,
-        onDone: (List<String>) -> Unit
+        sink: MutableList<OcrLine>,
+        onDone: () -> Unit
     ) {
-        if (index >= ROTATIONS.size) {
-            onDone(lines)
+        if (index >= passes.size) {
+            onDone()
             return
         }
-        val rotation = ROTATIONS[index]
-        recognizer.process(InputImage.fromBitmap(crop, rotation))
-            .addOnSuccessListener { visionText ->
-                visionText.textBlocks.forEach { block ->
-                    block.lines.forEach { lines.add(it.text) }
+        val pass = passes[index]
+        recognizer.process(InputImage.fromBitmap(pass.bitmap, pass.rotation))
+            .addOnSuccessListener { vt ->
+                var count = 0
+                vt.textBlocks.forEach { block ->
+                    block.lines.forEach { line ->
+                        val r = line.boundingBox
+                        val boxOfLine = if (r != null) TextBox(r.left, r.top, r.right, r.bottom)
+                            else TextBox(0, sink.size * 10, 1, sink.size * 10 + 1)  // synthetic stack
+                        sink.add(
+                            OcrLine(
+                                line.text.trim(),
+                                boxOfLine,
+                                line.confidence.takeIf { it > 0f },
+                                pass.region,
+                                index
+                            )
+                        )
+                        count++
+                    }
+                }
+                if (pass.region != OcrRegion.FULL && count > 0) {
+                    Log.d(TAG, "strip ${pass.region}@${pass.rotation}: ${count} line(s)")
                 }
             }
-            .addOnFailureListener { Log.w(TAG, "pass ${rotation}deg failed", it) }
-            .addOnCompleteListener { recognizeRotations(crop, index + 1, lines, onDone) }
+            .addOnFailureListener { Log.w(TAG, "pass $index (${pass.region} ${pass.rotation}) failed", it) }
+            .addOnCompleteListener { runPasses(passes, index + 1, sink, onDone) }
     }
 
-    /**
-     * Deduplicates lines across rotation passes (the same text can be read in
-     * more than one pass) and drops near-empty garbage from wrong-rotation reads.
-     */
-    private fun mergeLines(lines: List<String>): String {
+    /** FULL-pass text only, deduped — identical to the old flat pipeline. */
+    private fun mergeFull(lines: List<OcrLine>): String {
         val seen = HashSet<String>()
         val kept = mutableListOf<String>()
         for (line in lines) {
-            val trimmed = line.trim()
+            if (line.region != OcrRegion.FULL) continue
+            val trimmed = line.text.trim()
             val key = trimmed.filter { it.isLetterOrDigit() }.lowercase()
             if (key.length < 2) continue
             if (seen.add(key)) kept.add(trimmed)
         }
         return kept.joinToString("\n")
+    }
+
+    /**
+     * Crops one vertical edge strip of the vignette, extending outward beyond
+     * the box (the date often sits just off the sticker) and upscaled for the
+     * small text. Null if the clamped strip is degenerate.
+     */
+    private fun buildStrip(source: Bitmap, box: RectF, left: Boolean): Bitmap? {
+        val inward = box.width() * STRIP_WIDTH_FRACTION
+        val outward = box.width() * STRIP_OUTWARD_FRACTION
+        val vpad = box.height() * STRIP_VPAD_FRACTION
+
+        val x0 = if (left) box.left - outward else box.right - inward
+        val x1 = if (left) box.left + inward else box.right + outward
+        val ix0 = max(0f, x0).roundToInt()
+        val iy0 = max(0f, box.top - vpad).roundToInt()
+        val ix1 = min(source.width.toFloat(), x1).roundToInt()
+        val iy1 = min(source.height.toFloat(), box.bottom + vpad).roundToInt()
+        val w = ix1 - ix0
+        val h = iy1 - iy0
+        if (w < STRIP_MIN_DIM || h < STRIP_MIN_DIM) return null
+
+        val cropped = Bitmap.createBitmap(source, ix0, iy0, w, h)
+        return ensureReadable(cropped, STRIP_MIN_READABLE_SIDE, STRIP_MAX_UPSCALE)
+    }
+
+    /**
+     * ML Kit reads small text poorly; upscale (bilinear) so the short side is
+     * at least [target] px, capped at [maxFactor]. Recycles the input when a
+     * new bitmap is produced.
+     */
+    private fun ensureReadable(bitmap: Bitmap, target: Int, maxFactor: Float): Bitmap {
+        val shortSide = min(bitmap.width, bitmap.height)
+        if (shortSide >= target) return bitmap
+        val factor = min(maxFactor, target.toFloat() / shortSide)
+        val scaled = Bitmap.createScaledBitmap(
+            bitmap,
+            (bitmap.width * factor).roundToInt(),
+            (bitmap.height * factor).roundToInt(),
+            true
+        )
+        if (scaled !== bitmap) bitmap.recycle()
+        return scaled
     }
 
     fun close() {
@@ -206,7 +261,13 @@ class TextReader {
         private const val MIN_ACCEPT_CHARS = 4
         private const val MIN_READABLE_SIDE = 300
         private const val MAX_UPSCALE = 3f
-        // 0 = as-detected, 90/270 = text printed perpendicular to the main label.
-        private val ROTATIONS = intArrayOf(0, 90, 270)
+
+        // Vertical edge strips carrying the expiration date.
+        private const val STRIP_WIDTH_FRACTION = 0.30f    // inward from edge × box width
+        private const val STRIP_OUTWARD_FRACTION = 0.12f  // outward beyond edge × box width
+        private const val STRIP_VPAD_FRACTION = 0.06f     // beyond top & bottom × box height
+        private const val STRIP_MIN_READABLE_SIDE = 320
+        private const val STRIP_MAX_UPSCALE = 5f
+        private const val STRIP_MIN_DIM = 24
     }
 }
