@@ -15,13 +15,16 @@ class HomeActivity : AppCompatActivity() {
         findViewById<View>(R.id.card_perime).setOnClickListener {
             startActivity(Intent(this, MainActivity::class.java))
         }
+        findViewById<View>(R.id.card_facture).setOnClickListener {
+            startActivity(Intent(this, FactureActivity::class.java))
+        }
         val comingSoon = View.OnClickListener {
             Toast.makeText(this, R.string.coming_soon, Toast.LENGTH_SHORT).show()
         }
-        findViewById<View>(R.id.card_facture).setOnClickListener(comingSoon)
         findViewById<View>(R.id.card_more).setOnClickListener(comingSoon)
 
         // Retry any records still queued from previous offline sessions.
         UploadQueue.scheduleUpload(this)
+        FactureUploadQueue.scheduleUpload(this)
     }
 }

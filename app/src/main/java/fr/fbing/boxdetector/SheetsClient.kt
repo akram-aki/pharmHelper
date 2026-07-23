@@ -40,6 +40,27 @@ class SheetsClient(private val context: Context) {
         Log.d(TAG, "appended ${records.size} record(s)")
     }
 
+    /**
+     * Uploads one scanned facture: base64-encoded PDF plus metadata. The script
+     * (action "uploadFacture") stores it as a Drive file and appends a row to
+     * the "Factures" index sheet. Blocking; throws on any failure.
+     */
+    @Throws(IOException::class)
+    fun uploadFacture(record: FactureRecord, pdfBase64: String) {
+        val cfg = config ?: throw IOException("Sheets not configured")
+        val payload = JSONObject()
+            .put("secret", cfg.secret)
+            .put("action", "uploadFacture")
+            .put("meta", record.toMeta())
+            .put("pdfBase64", pdfBase64)
+
+        val response = postJson(cfg.scriptUrl, payload.toString(), MAX_REDIRECTS)
+        if (!response.optBoolean("ok", false)) {
+            throw IOException("endpoint error: ${response.optString("error", "unknown")}")
+        }
+        Log.d(TAG, "uploaded facture ${record.id}")
+    }
+
     private fun loadConfig(): Config? = try {
         val json = JSONObject(
             context.assets.open(CONFIG_ASSET).bufferedReader().readText()

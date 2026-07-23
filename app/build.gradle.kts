@@ -77,5 +77,9 @@ dependencies {
 
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
+    // CamScanner-style capture: edge detection, perspective correction,
+    // enhancement, multi-page, direct PDF output. Delivered via Play Services.
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
+
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 }

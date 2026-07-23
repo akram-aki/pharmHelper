@@ -37,6 +37,25 @@
     <string name="service_perime_title">Scan périmés</string>
     <string name="service_perime_desc">Scanner les vignettes des médicaments périmés</string>
     <string name="service_facture_title">Scan factures</string>
+    <string name="service_facture_desc">Numériser et archiver les factures</string>
     <string name="service_more_title">Autres services</string>
     <string name="coming_soon">Bientôt disponible</string>
+
+    <!-- Scan factures -->
+    <string name="facture_intro">Photographiez une facture papier. Elle sera recadrée, redressée et convertie en PDF, puis archivée dans le cloud.</string>
+    <string name="facture_scan_button">Scanner une facture</string>
+    <string name="facture_rescan_button">Rescanner</string>
+    <string name="facture_reading">Lecture de la facture…</string>
+    <string name="facture_supplier">Fournisseur</string>
+    <string name="facture_supplier_hint">Nom du fournisseur</string>
+    <string name="facture_date">Date de la facture</string>
+    <string name="facture_date_hint">JJ/MM/AAAA</string>
+    <string name="facture_pages">%1$d page(s)</string>
+    <string name="facture_save">Enregistrer</string>
+    <string name="facture_queued">Facture enregistrée — envoi en cours</string>
+    <string name="facture_not_configured">Envoi non configuré — enregistrée localement</string>
+    <string name="facture_save_failed">Échec de l\'enregistrement de la facture</string>
+    <string name="facture_scanner_unavailable">Scanner indisponible — Google Play Services requis</string>
+    <string name="facture_scan_failed">Le scan a échoué — réessayez</string>
+    <string name="facture_pending_status">%1$d facture(s) en attente d\'envoi</string>
 </resources>

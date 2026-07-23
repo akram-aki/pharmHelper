@@ -41,6 +41,12 @@
             android:parentActivityName=".MainActivity"
             android:screenOrientation="portrait" />
 
+        <activity
+            android:name=".FactureActivity"
+            android:exported="false"
+            android:parentActivityName=".HomeActivity"
+            android:screenOrientation="portrait" />
+
     </application>
 
 </manifest>
