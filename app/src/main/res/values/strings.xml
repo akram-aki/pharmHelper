@@ -45,7 +45,6 @@
     <string name="facture_intro">Photographiez une facture papier. Elle sera recadrée, redressée et convertie en PDF, puis archivée dans le cloud.</string>
     <string name="facture_scan_button">Scanner une facture</string>
     <string name="facture_rescan_button">Rescanner</string>
-    <string name="facture_reading">Lecture de la facture…</string>
     <string name="facture_supplier">Fournisseur</string>
     <string name="facture_supplier_hint">Nom du fournisseur</string>
     <string name="facture_date">Date de la facture</string>

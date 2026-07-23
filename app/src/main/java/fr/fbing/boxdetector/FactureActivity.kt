@@ -13,21 +13,24 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
  * "Scan factures": launches the ML Kit Document Scanner (CamScanner-style edge
- * detection + perspective correction + enhancement + multi-page → PDF), reads
- * the first page with [FactureOcr] to pre-fill supplier/date, and enqueues the
- * confirmed PDF for durable upload via [FactureUploadQueue].
+ * detection + perspective correction + enhancement + multi-page → PDF), then
+ * lets the user type the supplier and pick the invoice date (calendar dialog)
+ * before enqueuing the confirmed PDF for durable upload via [FactureUploadQueue].
  */
 class FactureActivity : AppCompatActivity() {
 
@@ -36,17 +39,21 @@ class FactureActivity : AppCompatActivity() {
     private lateinit var pendingStatus: TextView
     private lateinit var thumbnail: ImageView
     private lateinit var pageCountView: TextView
-    private lateinit var readingStatus: TextView
     private lateinit var inputSupplier: TextInputEditText
     private lateinit var inputDate: TextInputEditText
+    private lateinit var dateInputLayout: TextInputLayout
     private lateinit var btnScan: MaterialButton
     private lateinit var btnSave: MaterialButton
 
-    private lateinit var ocr: FactureOcr
     private lateinit var io: ExecutorService
 
     private var pendingPdfUri: Uri? = null
     private var pendingPageCount: Int = 1
+
+    /** Chosen invoice date as "dd/MM/yyyy" (empty until picked), plus the
+     *  picker's current UTC-ms selection (defaults to today). */
+    private var invoiceDate: String = ""
+    private var dateSelection: Long = MaterialDatePicker.todayInUtcMilliseconds()
 
     private val scannerLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
@@ -69,16 +76,19 @@ class FactureActivity : AppCompatActivity() {
         pendingStatus = findViewById(R.id.pending_status)
         thumbnail = findViewById(R.id.thumbnail)
         pageCountView = findViewById(R.id.page_count)
-        readingStatus = findViewById(R.id.reading_status)
         inputSupplier = findViewById(R.id.input_supplier)
         inputDate = findViewById(R.id.input_date)
+        dateInputLayout = findViewById(R.id.date_input_layout)
         btnScan = findViewById(R.id.btn_scan)
         btnSave = findViewById(R.id.btn_save)
 
         btnScan.setOnClickListener { launchScanner() }
         btnSave.setOnClickListener { save() }
+        // The date field is not typeable — tapping it (or its calendar icon)
+        // opens the picker.
+        inputDate.setOnClickListener { showDatePicker() }
+        dateInputLayout.setEndIconOnClickListener { showDatePicker() }
 
-        ocr = FactureOcr()
         io = Executors.newSingleThreadExecutor()
 
         // Retry any factures still queued from previous offline sessions.
@@ -126,26 +136,15 @@ class FactureActivity : AppCompatActivity() {
         pendingPageCount = pdf.pageCount
 
         showReviewState(pdf.pageCount)
-
-        val firstPage = result.pages?.firstOrNull()?.imageUri
-        if (firstPage != null) {
-            thumbnail.setImageURI(firstPage)
-            readingStatus.visibility = View.VISIBLE
-            ocr.suggest(this, firstPage) { s ->
-                readingStatus.visibility = View.GONE
-                // Only pre-fill fields the user hasn't already typed into.
-                if (inputSupplier.text.isNullOrBlank()) s.supplier?.let { inputSupplier.setText(it) }
-                if (inputDate.text.isNullOrBlank()) s.invoiceDate?.let { inputDate.setText(it) }
-            }
-        } else {
-            thumbnail.setImageDrawable(null)
-            readingStatus.visibility = View.GONE
-        }
+        // Page-1 preview; setImageURI(null) safely clears if there's no page image.
+        thumbnail.setImageURI(result.pages?.firstOrNull()?.imageUri)
     }
 
     private fun showReviewState(pageCount: Int) {
         inputSupplier.setText("")
         inputDate.setText("")
+        invoiceDate = ""
+        dateSelection = MaterialDatePicker.todayInUtcMilliseconds()
         pageCountView.text = getString(R.string.facture_pages, pageCount)
         panelIntro.visibility = View.GONE
         panelReview.visibility = View.VISIBLE
@@ -154,17 +153,32 @@ class FactureActivity : AppCompatActivity() {
         btnSave.isEnabled = true
     }
 
+    private fun showDatePicker() {
+        val picker = MaterialDatePicker.Builder.datePicker()
+            .setTitleText(R.string.facture_date)
+            .setSelection(dateSelection)
+            .build()
+        picker.addOnPositiveButtonClickListener { millis ->
+            // MaterialDatePicker returns UTC-midnight ms — format in UTC so the
+            // displayed day can't shift by a timezone offset.
+            dateSelection = millis
+            invoiceDate = DATE_FMT.format(Date(millis))
+            inputDate.setText(invoiceDate)
+        }
+        picker.show(supportFragmentManager, "facture_date")
+    }
+
     private fun save() {
         val pdfUri = pendingPdfUri ?: return
         val supplier = inputSupplier.text?.toString()?.trim().orEmpty()
-        val invoiceDate = inputDate.text?.toString()?.trim().orEmpty()
+        val date = invoiceDate
         val scanTimestamp = TIMESTAMP_FMT.format(Date())
         val pageCount = pendingPageCount
 
         btnSave.isEnabled = false
         io.execute {
             val record = FactureUploadQueue.enqueue(
-                this, pdfUri, supplier, invoiceDate, scanTimestamp, pageCount
+                this, pdfUri, supplier, date, scanTimestamp, pageCount
             )
             val configured = SheetsClient(this).isConfigured()
             runOnUiThread {
@@ -186,6 +200,8 @@ class FactureActivity : AppCompatActivity() {
     private fun resetToIntro() {
         pendingPdfUri = null
         pendingPageCount = 1
+        invoiceDate = ""
+        dateSelection = MaterialDatePicker.todayInUtcMilliseconds()
         thumbnail.setImageDrawable(null)
         inputSupplier.setText("")
         inputDate.setText("")
@@ -212,12 +228,14 @@ class FactureActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        ocr.close()
         io.shutdown()
     }
 
     companion object {
         private const val MAX_PAGES = 15
         private val TIMESTAMP_FMT = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+        private val DATE_FMT = SimpleDateFormat("dd/MM/yyyy", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
     }
 }
