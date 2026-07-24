@@ -1,6 +1,7 @@
 package fr.fbing.boxdetector
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -31,6 +32,7 @@ import java.util.concurrent.Executors
  * detection + perspective correction + enhancement + multi-page → PDF), then
  * lets the user type the supplier and pick the invoice date (calendar dialog)
  * before enqueuing the confirmed PDF for durable upload via [FactureUploadQueue].
+ * A "Mes factures" button opens the shared Drive folder to browse saved PDFs.
  */
 class FactureActivity : AppCompatActivity() {
 
@@ -43,6 +45,7 @@ class FactureActivity : AppCompatActivity() {
     private lateinit var inputDate: TextInputEditText
     private lateinit var dateInputLayout: TextInputLayout
     private lateinit var btnScan: MaterialButton
+    private lateinit var btnFactures: MaterialButton
     private lateinit var btnSave: MaterialButton
 
     private lateinit var io: ExecutorService
@@ -80,9 +83,11 @@ class FactureActivity : AppCompatActivity() {
         inputDate = findViewById(R.id.input_date)
         dateInputLayout = findViewById(R.id.date_input_layout)
         btnScan = findViewById(R.id.btn_scan)
+        btnFactures = findViewById(R.id.btn_factures)
         btnSave = findViewById(R.id.btn_save)
 
         btnScan.setOnClickListener { launchScanner() }
+        btnFactures.setOnClickListener { openFacturesFolder() }
         btnSave.setOnClickListener { save() }
         // The date field is not typeable — tapping it (or its calendar icon)
         // opens the picker.
@@ -125,6 +130,16 @@ class FactureActivity : AppCompatActivity() {
             }
     }
 
+    /** Opens the shared Drive folder (the "Mes factures" web page) externally. */
+    private fun openFacturesFolder() {
+        val url = getString(R.string.facture_folder_url)
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(this, R.string.facture_no_browser, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun onScanResult(data: Intent?) {
         val result = GmsDocumentScanningResult.fromActivityResultIntent(data)
         val pdf = result?.pdf
@@ -149,6 +164,7 @@ class FactureActivity : AppCompatActivity() {
         panelIntro.visibility = View.GONE
         panelReview.visibility = View.VISIBLE
         btnScan.visibility = View.GONE
+        btnFactures.visibility = View.GONE
         btnSave.visibility = View.VISIBLE
         btnSave.isEnabled = true
     }
@@ -209,6 +225,7 @@ class FactureActivity : AppCompatActivity() {
         panelIntro.visibility = View.VISIBLE
         btnSave.visibility = View.GONE
         btnScan.visibility = View.VISIBLE
+        btnFactures.visibility = View.VISIBLE
         updatePendingStatus()
     }
 

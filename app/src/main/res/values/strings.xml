@@ -57,4 +57,7 @@
     <string name="facture_scanner_unavailable">Scanner indisponible — Google Play Services requis</string>
     <string name="facture_scan_failed">Le scan a échoué — réessayez</string>
     <string name="facture_pending_status">%1$d facture(s) en attente d\'envoi</string>
+    <string name="facture_view_button">Mes factures</string>
+    <string name="facture_no_browser">Aucun navigateur trouvé</string>
+    <string name="facture_folder_url" translatable="false">https://drive.google.com/drive/folders/1famdlXgJQjcMLvCqJidVXzpF_5X6frWK</string>
 </resources>
