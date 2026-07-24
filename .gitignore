@@ -28,6 +28,9 @@ keystore.properties
 # Source data — pharmacy DB used to derive assets/drug_names.txt, too big to commit
 STOCK.mdb
 
+# Signed CNAS submission files — generated output, not project source
+cnas_signed/
+
 # OS / editor
 .DS_Store
 Thumbs.db
