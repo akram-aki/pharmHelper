@@ -60,6 +60,30 @@
                     android:textColor="@color/pharma_green_dark"
                     android:visibility="gone" />
 
+                <LinearLayout
+                    android:id="@+id/upload_progress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:visibility="gone">
+
+                    <ProgressBar
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:indeterminate="true" />
+
+                    <TextView
+                        android:id="@+id/upload_progress_text"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:textSize="14sp"
+                        android:textColor="@color/pharma_green_dark" />
+
+                </LinearLayout>
+
             </LinearLayout>
 
             <!-- Review state -->

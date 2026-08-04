@@ -33,7 +33,7 @@ class SheetsClient(private val context: Context) {
             .put("secret", cfg.secret)
             .put("records", JSONArray().apply { records.forEach { put(it.toJson()) } })
 
-        val response = postJson(cfg.scriptUrl, payload.toString(), MAX_REDIRECTS)
+        val response = postJson(cfg.scriptUrl, payload.toString(), MAX_REDIRECTS, TIMEOUT_MS)
         if (!response.optBoolean("ok", false)) {
             throw IOException("endpoint error: ${response.optString("error", "unknown")}")
         }
@@ -54,11 +54,19 @@ class SheetsClient(private val context: Context) {
             .put("meta", record.toMeta())
             .put("pdfBase64", pdfBase64)
 
-        val response = postJson(cfg.scriptUrl, payload.toString(), MAX_REDIRECTS)
+        // Factures get a far longer timeout than the small perime batch: the
+        // server has to base64-decode megabytes, write a Drive file and append a
+        // row before it answers. Timing out early used to make the client retry
+        // an upload the server had already committed — a duplicate in Drive.
+        val response = postJson(cfg.scriptUrl, payload.toString(), MAX_REDIRECTS, FACTURE_TIMEOUT_MS)
         if (!response.optBoolean("ok", false)) {
             throw IOException("endpoint error: ${response.optString("error", "unknown")}")
         }
-        Log.d(TAG, "uploaded facture ${record.id}")
+        if (response.optBoolean("duplicate", false)) {
+            Log.i(TAG, "facture ${record.id} was already stored — server skipped the duplicate")
+        } else {
+            Log.d(TAG, "uploaded facture ${record.id}")
+        }
     }
 
     private fun loadConfig(): Config? = try {
@@ -78,11 +86,11 @@ class SheetsClient(private val context: Context) {
      * POSTs [body]; Apps Script answers with a redirect to a one-time
      * googleusercontent URL that must be fetched with GET.
      */
-    private fun postJson(url: String, body: String, redirectsLeft: Int): JSONObject {
+    private fun postJson(url: String, body: String, redirectsLeft: Int, timeoutMs: Int): JSONObject {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
             instanceFollowRedirects = false
             doOutput = true
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -94,7 +102,7 @@ class SheetsClient(private val context: Context) {
                 val location = conn.getHeaderField("Location")
                     ?: throw SheetsHttpException(code, "redirect without Location")
                 if (redirectsLeft <= 0) throw SheetsHttpException(code, "too many redirects")
-                return getJson(location, redirectsLeft - 1)
+                return getJson(location, redirectsLeft - 1, timeoutMs)
             }
             return readBody(conn, code)
         } finally {
@@ -102,11 +110,11 @@ class SheetsClient(private val context: Context) {
         }
     }
 
-    private fun getJson(url: String, redirectsLeft: Int): JSONObject {
+    private fun getJson(url: String, redirectsLeft: Int, timeoutMs: Int): JSONObject {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
             instanceFollowRedirects = false
         }
         try {
@@ -115,7 +123,7 @@ class SheetsClient(private val context: Context) {
                 val location = conn.getHeaderField("Location")
                     ?: throw SheetsHttpException(code, "redirect without Location")
                 if (redirectsLeft <= 0) throw SheetsHttpException(code, "too many redirects")
-                return getJson(location, redirectsLeft - 1)
+                return getJson(location, redirectsLeft - 1, timeoutMs)
             }
             return readBody(conn, code)
         } finally {
@@ -142,6 +150,7 @@ class SheetsClient(private val context: Context) {
         private const val TAG = "SheetsClient"
         private const val CONFIG_ASSET = "sheets_config.json"
         private const val TIMEOUT_MS = 30_000
+        private const val FACTURE_TIMEOUT_MS = 120_000
         private const val MAX_REDIRECTS = 3
     }
 }

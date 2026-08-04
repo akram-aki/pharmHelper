@@ -13,6 +13,19 @@ does two things per upload:
 
 The Android app never talks to Drive directly and needs no Google credentials.
 
+> **Idempotency (important).** A facture POST carries megabytes of base64, so the
+> server can finish writing *after* the client's socket has timed out; the app then
+> retries the same facture. The handler therefore stores the client's `meta.id` in an
+> **`id` column** and skips any upload whose id is already present, returning
+> `{ok:true, duplicate:true}`. Without this, every retry created another Drive file
+> and another index row (observed: the same invoice 5×). A script lock serializes
+> concurrent retries so two attempts can't both pass the check.
+>
+> The authoritative, deployable script — perime records **and** factures, with the
+> dedupe — is `appsscript_upload.gs` at the repo root (git-ignored; it holds the
+> secret). Paste that whole file into the Apps Script editor and redeploy; the
+> snippets below document the facture half of it.
+
 ---
 
 ## 1. One-time Drive setup
@@ -35,6 +48,10 @@ the `action` branch into your current `doPost(e)`.
 // ---- Facture support ---------------------------------------------------------
 var FACTURES_FOLDER_ID = "1famdlXgJQjcMLvCqJidVXzpF_5X6frWK";
 var FACTURES_SHEET_NAME = "Factures";
+var FACTURES_HEADERS = [
+  "scanTimestamp", "supplier", "invoiceDate", "pageCount", "sizeBytes", "fileId", "url", "id"
+];
+var FACTURE_ID_COL = 8; // 1-based column of "id"
 
 // In your existing doPost(e): after parsing the body and checking the secret,
 // branch on action BEFORE the existing records-append logic:
@@ -45,16 +62,34 @@ var FACTURES_SHEET_NAME = "Factures";
 //   ... existing appendRecords logic ...
 
 function handleFactureUpload(body) {
+  var meta = body.meta || {};
+  var id = String(meta.id || "");
+
+  // Serialize concurrent retries of the same facture.
+  var lock = LockService.getScriptLock();
   try {
-    var meta = body.meta || {};
+    lock.waitLock(45000);
+  } catch (err) {
+    return json({ ok: false, error: "busy, retry later" });
+  }
+
+  try {
+    var sheet = facturesSheet();
+
+    // Already stored under this id? Then this is a retry of a response that got
+    // lost, not a new facture — return the original file, create nothing.
+    if (id) {
+      var existing = findFactureRow(sheet, id);
+      if (existing) {
+        return json({ ok: true, duplicate: true, fileId: existing.fileId, url: existing.url });
+      }
+    }
+
     var bytes = Utilities.base64Decode(body.pdfBase64);
-    var name = factureFileName(meta);
-    var blob = Utilities.newBlob(bytes, "application/pdf", name);
+    var blob = Utilities.newBlob(bytes, "application/pdf", factureFileName(meta));
+    var file = DriveApp.getFolderById(FACTURES_FOLDER_ID).createFile(blob);
 
-    var folder = DriveApp.getFolderById(FACTURES_FOLDER_ID);
-    var file = folder.createFile(blob);
-
-    facturesSheet().appendRow([
+    sheet.appendRow([
       meta.scanTimestamp || new Date().toISOString(),
       meta.supplier || "",
       meta.invoiceDate || "",
@@ -62,12 +97,30 @@ function handleFactureUpload(body) {
       meta.sizeBytes || "",
       file.getId(),
       file.getUrl(),
+      id,
     ]);
+    SpreadsheetApp.flush(); // commit the id before releasing the lock
 
     return json({ ok: true, fileId: file.getId(), url: file.getUrl() });
   } catch (err) {
     return json({ ok: false, error: String(err) });
+  } finally {
+    lock.releaseLock();
   }
+}
+
+// Row already carrying this facture id, or null. FACTURE_ID_COL = 8.
+function findFactureRow(sheet, id) {
+  var last = sheet.getLastRow();
+  if (last < 2) return null;
+  var ids = sheet.getRange(2, FACTURE_ID_COL, last - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === id) {
+      var row = sheet.getRange(i + 2, 1, 1, FACTURES_HEADERS.length).getValues()[0];
+      return { fileId: row[5], url: row[6] };
+    }
+  }
+  return null;
 }
 
 // GET ?action=listFactures&secret=... → the index rows as JSON (for the future
@@ -106,15 +159,13 @@ function facturesSheet() {
   if (!sheet) {
     sheet = ss.getSheets()[0];
     sheet.setName(FACTURES_SHEET_NAME);
-    sheet.appendRow([
-      "scanTimestamp",
-      "supplier",
-      "invoiceDate",
-      "pageCount",
-      "sizeBytes",
-      "fileId",
-      "url",
-    ]);
+    sheet.appendRow(FACTURES_HEADERS);
+    return sheet;
+  }
+  // Sheets created before dedupe existed have no "id" column — add it so
+  // findFactureRow has somewhere to look (old rows keep it blank).
+  if (sheet.getLastColumn() < FACTURE_ID_COL) {
+    sheet.getRange(1, FACTURE_ID_COL).setValue("id");
   }
   return sheet;
 }

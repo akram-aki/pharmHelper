@@ -150,23 +150,41 @@ object FactureUploadQueue {
 
     fun pendingCount(context: Context): Int = peekAll(context).size
 
+    /**
+     * Ensures an upload attempt is pending. KEEP, never REPLACE: a facture POST
+     * carries a multi-MB PDF, and cancelling one mid-flight (which REPLACE does)
+     * leaves the record queued while the server may already have stored it —
+     * that is how the same facture ended up in Drive several times. Safe to call
+     * from every screen entry; it is a no-op while work already exists.
+     */
     fun scheduleUpload(context: Context) {
-        val request = OneTimeWorkRequestBuilder<FactureUploadWorker>()
-            .setConstraints(
-                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-            )
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-            .build()
-        // REPLACE: each enqueue/app-start attempts immediately rather than
-        // chaining behind a backed-off retry (mirrors UploadQueue).
         WorkManager.getInstance(context)
-            .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+            .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, uploadRequest())
     }
+
+    /**
+     * User-driven "retry now": replaces any backed-off attempt so the wait
+     * restarts immediately. Only call from an explicit retry action, never on
+     * navigation — it can cancel a running upload.
+     */
+    fun forceUpload(context: Context) {
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, uploadRequest())
+    }
+
+    private fun uploadRequest() = OneTimeWorkRequestBuilder<FactureUploadWorker>()
+        .setConstraints(
+            Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        )
+        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+        .build()
+
+    /** Unique WorkManager name, so the UI can observe upload state. */
+    const val WORK_NAME = "facture-upload"
 
     private fun queueFile(context: Context) = File(context.filesDir, QUEUE_FILE)
 
     private const val TAG = "FactureUploadQueue"
     private const val QUEUE_FILE = "facture_queue.jsonl"
     private const val FACTURE_DIR = "factures"
-    private const val WORK_NAME = "facture-upload"
 }

@@ -12,6 +12,8 @@ import android.widget.Toast
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.datepicker.MaterialDatePicker
@@ -39,6 +41,8 @@ class FactureActivity : AppCompatActivity() {
     private lateinit var panelIntro: View
     private lateinit var panelReview: View
     private lateinit var pendingStatus: TextView
+    private lateinit var uploadProgress: View
+    private lateinit var uploadProgressText: TextView
     private lateinit var thumbnail: ImageView
     private lateinit var pageCountView: TextView
     private lateinit var inputSupplier: TextInputEditText
@@ -57,6 +61,9 @@ class FactureActivity : AppCompatActivity() {
      *  picker's current UTC-ms selection (defaults to today). */
     private var invoiceDate: String = ""
     private var dateSelection: Long = MaterialDatePicker.todayInUtcMilliseconds()
+
+    /** True while a facture upload is queued or running — blocks new scans. */
+    private var uploadInFlight: Boolean = false
 
     private val scannerLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
@@ -77,6 +84,8 @@ class FactureActivity : AppCompatActivity() {
         panelIntro = findViewById(R.id.panel_intro)
         panelReview = findViewById(R.id.panel_review)
         pendingStatus = findViewById(R.id.pending_status)
+        uploadProgress = findViewById(R.id.upload_progress)
+        uploadProgressText = findViewById(R.id.upload_progress_text)
         thumbnail = findViewById(R.id.thumbnail)
         pageCountView = findViewById(R.id.page_count)
         inputSupplier = findViewById(R.id.input_supplier)
@@ -86,23 +95,80 @@ class FactureActivity : AppCompatActivity() {
         btnFactures = findViewById(R.id.btn_factures)
         btnSave = findViewById(R.id.btn_save)
 
-        btnScan.setOnClickListener { launchScanner() }
+        btnScan.setOnClickListener {
+            if (uploadInFlight) {
+                Toast.makeText(this, R.string.facture_upload_blocked, Toast.LENGTH_SHORT).show()
+            } else {
+                launchScanner()
+            }
+        }
         btnFactures.setOnClickListener { openFacturesFolder() }
         btnSave.setOnClickListener { save() }
         // The date field is not typeable — tapping it (or its calendar icon)
         // opens the picker.
         inputDate.setOnClickListener { showDatePicker() }
         dateInputLayout.setEndIconOnClickListener { showDatePicker() }
+        // Waiting queue shown as "… — Réessayer": tap to attempt right away.
+        pendingStatus.setOnClickListener { FactureUploadQueue.forceUpload(this) }
 
         io = Executors.newSingleThreadExecutor()
 
-        // Retry any factures still queued from previous offline sessions.
+        // Retry any factures still queued from previous offline sessions. KEEP
+        // policy, so this never cancels an upload already in flight.
         FactureUploadQueue.scheduleUpload(this)
+        observeUploads()
     }
 
     override fun onResume() {
         super.onResume()
         updatePendingStatus()
+    }
+
+    /**
+     * Tracks the upload worker so the screen reflects progress live and refuses
+     * new scans until the queue drains.
+     */
+    private fun observeUploads() {
+        WorkManager.getInstance(this)
+            .getWorkInfosForUniqueWorkLiveData(FactureUploadQueue.WORK_NAME)
+            .observe(this) { infos ->
+                val running = infos.any { it.state == WorkInfo.State.RUNNING }
+                if (io.isShutdown) return@observe
+                io.execute {
+                    val pending = FactureUploadQueue.pendingCount(this)
+                    runOnUiThread { renderUploadState(running, pending) }
+                }
+            }
+    }
+
+    /**
+     * One facture at a time: while anything is queued the scan button stays
+     * disabled. A queue that is waiting (no network yet) shows a tappable
+     * "Réessayer" so the user is never stuck without recourse.
+     */
+    private fun renderUploadState(running: Boolean, pending: Int) {
+        uploadInFlight = pending > 0
+        when {
+            pending == 0 -> {
+                uploadProgress.visibility = View.GONE
+                pendingStatus.visibility = View.GONE
+            }
+            running -> {
+                uploadProgressText.text = getString(R.string.facture_uploading, pending)
+                uploadProgress.visibility = View.VISIBLE
+                pendingStatus.visibility = View.GONE
+            }
+            else -> {
+                uploadProgress.visibility = View.GONE
+                pendingStatus.text = getString(R.string.facture_pending_status, pending) +
+                    " — " + getString(R.string.facture_retry_button)
+                pendingStatus.visibility = View.VISIBLE
+            }
+        }
+        btnScan.isEnabled = pending == 0
+        if (panelReview.visibility == View.VISIBLE) {
+            btnSave.isEnabled = pending == 0 && pendingPdfUri != null
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -166,7 +232,7 @@ class FactureActivity : AppCompatActivity() {
         btnScan.visibility = View.GONE
         btnFactures.visibility = View.GONE
         btnSave.visibility = View.VISIBLE
-        btnSave.isEnabled = true
+        btnSave.isEnabled = !uploadInFlight
     }
 
     private fun showDatePicker() {
@@ -230,16 +296,10 @@ class FactureActivity : AppCompatActivity() {
     }
 
     private fun updatePendingStatus() {
+        if (io.isShutdown) return
         io.execute {
             val n = FactureUploadQueue.pendingCount(this)
-            runOnUiThread {
-                if (n > 0) {
-                    pendingStatus.text = getString(R.string.facture_pending_status, n)
-                    pendingStatus.visibility = View.VISIBLE
-                } else {
-                    pendingStatus.visibility = View.GONE
-                }
-            }
+            runOnUiThread { renderUploadState(running = false, pending = n) }
         }
     }
 
