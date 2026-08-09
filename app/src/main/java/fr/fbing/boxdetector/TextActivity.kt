@@ -53,8 +53,13 @@ class TextActivity : AppCompatActivity() {
         rebuildFields(name)
 
         findViewById<View>(R.id.btn_next).setOnClickListener { showQuantityDialog() }
-        wireDateEdit(R.id.btn_edit_fab, R.id.field_fab_value, R.string.field_fab_date)
-        wireDateEdit(R.id.btn_edit_exp, R.id.field_exp_value, R.string.field_exp_date)
+        wireFieldEdit(R.id.btn_edit_fab, R.id.field_fab_value, R.string.field_fab_date,
+            R.string.edit_date_hint, InputType.TYPE_CLASS_TEXT)
+        wireFieldEdit(R.id.btn_edit_exp, R.id.field_exp_value, R.string.field_exp_date,
+            R.string.edit_date_hint, InputType.TYPE_CLASS_TEXT)
+        wireFieldEdit(R.id.btn_edit_ppa, R.id.field_ppa_value, R.string.field_ppa,
+            R.string.edit_ppa_hint,
+            InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL, suffix = " DA")
 
         findViewById<TextView>(R.id.field_ppa_value).text =
             intent.getStringExtra(EXTRA_PPA) ?: PLACEHOLDER
@@ -147,17 +152,29 @@ class TextActivity : AppCompatActivity() {
         }
     }
 
-    /** Lets the user type or correct a date the OCR missed or misread. */
-    private fun wireDateEdit(buttonId: Int, valueId: Int, titleRes: Int) {
+    /**
+     * Lets the user type or correct a value the OCR missed or misread.
+     * [suffix] (e.g. " DA") is stripped before editing and re-appended after,
+     * so a numeric field never has to hold the unit.
+     */
+    private fun wireFieldEdit(
+        buttonId: Int,
+        valueId: Int,
+        titleRes: Int,
+        hintRes: Int,
+        inputTypeFlags: Int,
+        suffix: String = ""
+    ) {
         val valueView = findViewById<TextView>(valueId)
         findViewById<View>(buttonId).setOnClickListener {
             val input = EditText(this).apply {
-                inputType = InputType.TYPE_CLASS_TEXT
-                hint = getString(R.string.edit_date_hint)
+                inputType = inputTypeFlags
+                hint = getString(hintRes)
                 val current = valueView.text.toString()
                 if (current != PLACEHOLDER) {
-                    setText(current)
-                    setSelection(current.length)
+                    val editable = current.removeSuffix(suffix).trim()
+                    setText(editable)
+                    setSelection(editable.length)
                 }
             }
             val container = FrameLayout(this).apply {
@@ -171,7 +188,7 @@ class TextActivity : AppCompatActivity() {
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.confirm) { _, _ ->
                     val text = input.text.toString().trim()
-                    valueView.text = text.ifEmpty { PLACEHOLDER }
+                    valueView.text = if (text.isEmpty()) PLACEHOLDER else text + suffix
                 }
                 .show()
         }

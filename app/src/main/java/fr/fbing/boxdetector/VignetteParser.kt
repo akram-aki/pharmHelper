@@ -3,6 +3,7 @@ package fr.fbing.boxdetector
 import android.content.Context
 import android.util.Log
 import java.text.Normalizer
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -233,21 +234,50 @@ class VignetteParser(private val context: Context) {
 
     // ---------------------------------------------------------------- PPA
 
+    private class PpaCandidate(val amount: Double, val confidence: Int)
+
+    /**
+     * Vignettes commonly print the price twice: the bare PPA and the PPA plus
+     * the 2.50 DA pharmacist fee (255.00 and 257.50). Two readings that sit
+     * within that fee of each other are therefore the same price with and
+     * without it — the higher one is the amount to record. Readings further
+     * apart are unrelated numbers, so the more trustworthy one wins instead
+     * (a figure next to a "PPA" label beats a bare "… DA" elsewhere).
+     */
     private fun extractPpa(lines: List<String>): String? {
+        val candidates = mutableListOf<PpaCandidate>()
         for (line in lines) {
-            if (!PPA_LABEL.containsMatchIn(line)) continue
-            val m = MONEY.find(line) ?: continue
-            return formatMoney(m.groupValues[1])
+            val label = PPA_LABEL.find(line)
+            if (label != null) {
+                // Only amounts after the label — the rest of the line may hold
+                // packaging like "B/12" that also looks like a number.
+                for (m in MONEY.findAll(line.substring(label.range.last + 1))) {
+                    addPpa(candidates, m.groupValues[1], PPA_CONF_LABELLED)
+                }
+            }
+            for (m in MONEY_WITH_DA.findAll(line)) {
+                addPpa(candidates, m.groupValues[1], PPA_CONF_CURRENCY)
+            }
         }
-        // Fallback: any line with an amount followed by DA/DZD.
-        for (line in lines) {
-            val m = MONEY_WITH_DA.find(line) ?: continue
-            return formatMoney(m.groupValues[1])
-        }
-        return null
+        val best = candidates.maxWithOrNull(
+            compareBy<PpaCandidate> { it.confidence }.thenBy { it.amount }
+        ) ?: return null
+
+        // Same price with/without the fee: keep the one that includes it.
+        val withFee = candidates
+            .filter { abs(it.amount - best.amount) <= PHARMACIST_FEE + 0.01 }
+            .maxByOrNull { it.amount } ?: best
+        return formatMoney(withFee.amount)
     }
 
-    private fun formatMoney(num: String) = "${num.replace(',', '.')} DA"
+    private fun addPpa(into: MutableList<PpaCandidate>, raw: String, confidence: Int) {
+        val amount = raw.replace(',', '.').toDoubleOrNull() ?: return
+        // Guards against reading the 2.50 fee itself (or a stray digit) as the price.
+        if (amount < MIN_PPA) return
+        into.add(PpaCandidate(amount, confidence))
+    }
+
+    private fun formatMoney(amount: Double) = String.format(Locale.US, "%.2f DA", amount)
 
     // ---------------------------------------------------------------- Name
 
@@ -368,6 +398,11 @@ class VignetteParser(private val context: Context) {
         private const val FALLBACK_CONFIDENCE = 50
         // Below this best-catalog similarity, the raw OCR reading is offered too.
         private const val OCR_OPTION_SIM = 0.75f
+        // Pharmacist fee added on top of the bare PPA on many vignettes.
+        private const val PHARMACIST_FEE = 2.5
+        private const val MIN_PPA = 10.0
+        private const val PPA_CONF_LABELLED = 90
+        private const val PPA_CONF_CURRENCY = 70
 
         private val PPA_LABEL = Regex("""P\.?\s*P\.?\s*A""", RegexOption.IGNORE_CASE)
         private val MONEY = Regex("""(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:DA|DZD)?""")

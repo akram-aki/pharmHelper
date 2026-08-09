@@ -33,6 +33,7 @@
     <string name="quantity_invalid">Entrez une quantité valide</string>
     <string name="edit_button">Modifier</string>
     <string name="edit_date_hint">MM/AAAA</string>
+    <string name="edit_ppa_hint">Prix en DA (ex. 257.50)</string>
     <string name="home_subtitle">Votre assistant de pharmacie</string>
     <string name="service_perime_title">Scan périmés</string>
     <string name="service_perime_desc">Scanner les vignettes des médicaments périmés</string>
