@@ -45,10 +45,32 @@ class BordereauActivity : AppCompatActivity() {
     /** Everything the last successful load returned, newest bordereau first. */
     private var all: List<Bordereau> = emptyList()
 
-    /** Null means "Tous". */
-    private var statusFilter: BordereauStatus? = null
+    private var filter = Filter.TOUS
 
     private var loading = false
+
+    /**
+     * The views of the list. The first four are the états derived from `etat` +
+     * `date_depot_ftp`; [VIREE] cuts across them — a bordereau can be both
+     * déposé and viré — so it is its own view rather than a fourth
+     * [BordereauStatus], and it groups by month of dépôt instead of by the year
+     * encoded in `num_bord`.
+     */
+    private enum class Filter(val groupByMonth: Boolean = false) {
+        TOUS,
+        OUVERT,
+        A_DEPOSER,
+        DEPOSE,
+        VIREE(groupByMonth = true);
+
+        fun matches(bordereau: Bordereau): Boolean = when (this) {
+            TOUS -> true
+            OUVERT -> bordereau.status == BordereauStatus.OUVERT
+            A_DEPOSER -> bordereau.status == BordereauStatus.A_DEPOSER
+            DEPOSE -> bordereau.status == BordereauStatus.DEPOSE
+            VIREE -> bordereau.isVire
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,11 +97,12 @@ class BordereauActivity : AppCompatActivity() {
         retryButton.setOnClickListener { load(showSpinner = true) }
 
         chipGroup.setOnCheckedStateChangeListener { _, checkedIds ->
-            statusFilter = when (checkedIds.firstOrNull()) {
-                R.id.chip_open -> BordereauStatus.OUVERT
-                R.id.chip_todo -> BordereauStatus.A_DEPOSER
-                R.id.chip_sent -> BordereauStatus.DEPOSE
-                else -> null
+            filter = when (checkedIds.firstOrNull()) {
+                R.id.chip_open -> Filter.OUVERT
+                R.id.chip_todo -> Filter.A_DEPOSER
+                R.id.chip_sent -> Filter.DEPOSE
+                R.id.chip_vire -> Filter.VIREE
+                else -> Filter.TOUS
             }
             render()
         }
@@ -153,11 +176,11 @@ class BordereauActivity : AppCompatActivity() {
         }
     }
 
-    /** Applies the état filter and the num_bord search, then regroups by year. */
+    /** Applies the current view and the num_bord search, then regroups. */
     private fun render() {
         val query = searchInput.text?.toString()?.trim().orEmpty()
         val visible = all.filter { bordereau ->
-            (statusFilter == null || bordereau.status == statusFilter) &&
+            filter.matches(bordereau) &&
                 (query.isEmpty() || bordereau.numBord.contains(query, ignoreCase = true))
         }
 
@@ -177,24 +200,54 @@ class BordereauActivity : AppCompatActivity() {
             return
         }
 
-        val rows = mutableListOf<BordereauAdapter.Row>()
-        // Grouped by the year encoded in num_bord, most recent year first;
-        // numbers that don't follow the "SSSSYY" shape land in a trailing group.
-        visible.groupBy { it.year }
-            .entries
-            .sortedByDescending { it.key ?: Int.MIN_VALUE }
-            .forEach { (year, group) ->
-                rows += BordereauAdapter.Row.Header(
-                    label = year?.toString() ?: getString(R.string.bordereau_year_unknown),
-                    count = group.size,
-                    total = group.sumOf { it.amount ?: 0.0 }
-                )
-                group.forEach { rows += BordereauAdapter.Row.Item(it) }
-            }
-
-        adapter.submit(rows)
+        adapter.submit(if (filter.groupByMonth) byMonth(visible) else byYear(visible))
         emptyState.visibility = View.GONE
         list.visibility = View.VISIBLE
+    }
+
+    /**
+     * Grouped by the year encoded in num_bord, most recent year first; numbers
+     * that don't follow the "SSSSYY" shape land in a trailing group.
+     */
+    private fun byYear(visible: List<Bordereau>): List<BordereauAdapter.Row> =
+        buildRows<Int?>(
+            groups = visible.groupBy { it.year }.entries.sortedByDescending { it.key ?: Int.MIN_VALUE },
+            label = { year -> year?.toString() ?: getString(R.string.bordereau_year_unknown) },
+            order = { group -> group }
+        )
+
+    /**
+     * Grouped by the month of the FTP deposit, most recent month first. The
+     * bordereaux this export never dated trail at the end — for 88 of them the
+     * virement is recorded with no date anywhere in the record.
+     */
+    private fun byMonth(visible: List<Bordereau>): List<BordereauAdapter.Row> =
+        buildRows<String?>(
+            // A null month sorts to "" — last, under descending order.
+            groups = visible.groupBy { it.depositMonth }.entries.sortedByDescending { it.key ?: "" },
+            label = { month ->
+                month?.let(BordereauFormat::monthLabel)
+                    ?: getString(R.string.bordereau_month_unknown)
+            },
+            order = { group -> group.sortedByDescending { it.depositedAt } }
+        )
+
+    private fun <K> buildRows(
+        groups: List<Map.Entry<K, List<Bordereau>>>,
+        label: (K) -> String,
+        order: (List<Bordereau>) -> List<Bordereau>
+    ): List<BordereauAdapter.Row> {
+        val rows = mutableListOf<BordereauAdapter.Row>()
+        groups.forEach { (key, group) ->
+            val ordered = order(group)
+            rows += BordereauAdapter.Row.Header(
+                label = label(key),
+                count = ordered.size,
+                total = ordered.sumOf { it.amount ?: 0.0 }
+            )
+            ordered.forEach { rows += BordereauAdapter.Row.Item(it) }
+        }
+        return rows
     }
 
     private fun showMessage(message: String, retry: Boolean) {

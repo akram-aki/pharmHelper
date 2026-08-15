@@ -16,7 +16,7 @@ import java.util.Locale
  */
 enum class BordereauStatus { OUVERT, A_DEPOSER, DEPOSE }
 
-/** Shared number formatting so item rows and group totals read alike. */
+/** Shared formatting so item rows and group headers read alike. */
 object BordereauFormat {
 
     private val AMOUNT_FMT = NumberFormat.getNumberInstance(Locale.FRANCE).apply {
@@ -24,8 +24,19 @@ object BordereauFormat {
         maximumFractionDigits = 2
     }
 
+    private val MONTH_KEY_FMT = SimpleDateFormat("yyyy-MM", Locale.US)
+    private val MONTH_LABEL_FMT = SimpleDateFormat("MMMM yyyy", Locale.FRANCE)
+
     /** "226 589,71" — grouped the way the CNAS paperwork writes amounts. */
     fun amount(value: Double): String = AMOUNT_FMT.format(value)
+
+    /** "2026-08" → "Août 2026". Echoes the key if it cannot be parsed. */
+    fun monthLabel(key: String): String = try {
+        MONTH_LABEL_FMT.format(MONTH_KEY_FMT.parse(key)!!)
+            .replaceFirstChar { it.uppercase() }
+    } catch (e: Exception) {
+        key
+    }
 }
 
 /**
@@ -49,6 +60,19 @@ data class Bordereau(
 
     /** Transferred amount in DA, or null when [montVir] is not a number. */
     val amount: Double? = montVir.toDoubleOrNull()
+
+    /** True once the CNAS has actually paid the bordereau. */
+    val isVire: Boolean = (amount ?: 0.0) > 0.0
+
+    /**
+     * "2026-08" — the month of the FTP deposit, used to group the virées by
+     * date. Null when the bordereau was never deposited: `date_cloture` and
+     * `date_ouverture` are the 1900 sentinel on every record of this export and
+     * `updated_at` is a single export-wide timestamp, so the deposit is the only
+     * real date the data carries.
+     */
+    val depositMonth: String? =
+        if (depositedAt != null && dateDepotFtp.length >= 7) dateDepotFtp.substring(0, 7) else null
 
     /**
      * `num_bord` is "SSSSYY": a four-digit sequence followed by the two-digit

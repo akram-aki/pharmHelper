@@ -74,9 +74,11 @@
     <string name="bordereau_status_open">Ouvert</string>
     <string name="bordereau_status_todo">À déposer</string>
     <string name="bordereau_status_sent">Déposé</string>
+    <string name="bordereau_filter_vire">Virée</string>
     <string name="bordereau_summary">%1$d bordereau(x) · %2$s DA</string>
     <string name="bordereau_group_summary">%1$d · %2$s DA</string>
     <string name="bordereau_year_unknown">Année inconnue</string>
+    <string name="bordereau_month_unknown">Sans date de dépôt</string>
     <string name="bordereau_centre">Centre %1$s</string>
     <string name="bordereau_deposit_label">Dépôt FTP</string>
     <string name="bordereau_amount_label">Virement</string>

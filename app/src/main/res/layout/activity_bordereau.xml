@@ -91,6 +91,13 @@
                     android:layout_height="wrap_content"
                     android:text="@string/bordereau_status_sent" />
 
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_vire"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bordereau_filter_vire" />
+
             </com.google.android.material.chip.ChipGroup>
 
         </HorizontalScrollView>
