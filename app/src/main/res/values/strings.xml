@@ -39,6 +39,8 @@
     <string name="service_perime_desc">Scanner les vignettes des médicaments périmés</string>
     <string name="service_facture_title">Scan factures</string>
     <string name="service_facture_desc">Numériser et archiver les factures</string>
+    <string name="service_bordereau_title">Vérifier bordereau</string>
+    <string name="service_bordereau_desc">Consulter les bordereaux CNAS et leur dépôt</string>
     <string name="service_more_title">Autres services</string>
     <string name="coming_soon">Bientôt disponible</string>
 
@@ -65,4 +67,25 @@
     <string name="facture_view_button">Mes factures</string>
     <string name="facture_no_browser">Aucun navigateur trouvé</string>
     <string name="facture_folder_url" translatable="false">https://drive.google.com/drive/folders/1famdlXgJQjcMLvCqJidVXzpF_5X6frWK</string>
+
+    <!-- Vérifier bordereau -->
+    <string name="bordereau_search_hint">Rechercher un n° de bordereau</string>
+    <string name="bordereau_filter_all">Tous</string>
+    <string name="bordereau_status_open">Ouvert</string>
+    <string name="bordereau_status_todo">À déposer</string>
+    <string name="bordereau_status_sent">Déposé</string>
+    <string name="bordereau_summary">%1$d bordereau(x) · %2$s DA</string>
+    <string name="bordereau_group_summary">%1$d · %2$s DA</string>
+    <string name="bordereau_year_unknown">Année inconnue</string>
+    <string name="bordereau_centre">Centre %1$s</string>
+    <string name="bordereau_deposit_label">Dépôt FTP</string>
+    <string name="bordereau_amount_label">Virement</string>
+    <string name="bordereau_amount">%1$s DA</string>
+    <string name="bordereau_not_deposited">Non déposé</string>
+    <string name="bordereau_empty">Aucun bordereau dans la base</string>
+    <string name="bordereau_no_match">Aucun bordereau ne correspond à ce filtre</string>
+    <string name="bordereau_load_failed">Chargement impossible — %1$s</string>
+    <string name="bordereau_refresh_failed">Actualisation impossible — données précédentes affichées</string>
+    <string name="bordereau_not_configured">Accès à la base non configuré — bordereau_config.json manquant</string>
+    <string name="bordereau_retry">Réessayer</string>
 </resources>

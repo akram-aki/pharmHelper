@@ -12,4 +12,12 @@
     <color name="home_background">#F4F7F5</color>
     <color name="text_primary">#1C2B22</color>
     <color name="text_secondary">#5F6F66</color>
+
+    <!-- Bordereau status badges: ouvert / à déposer / déposé -->
+    <color name="status_open_text">#9A5B00</color>
+    <color name="status_open_bg">#FFF1DC</color>
+    <color name="status_todo_text">#12508C</color>
+    <color name="status_todo_bg">#E1EFFB</color>
+    <color name="status_sent_text">#0E5A2E</color>
+    <color name="status_sent_bg">#E3F2E9</color>
 </resources>

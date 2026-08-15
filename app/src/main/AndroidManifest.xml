@@ -47,6 +47,12 @@
             android:parentActivityName=".HomeActivity"
             android:screenOrientation="portrait" />
 
+        <activity
+            android:name=".BordereauActivity"
+            android:exported="false"
+            android:parentActivityName=".HomeActivity"
+            android:screenOrientation="portrait" />
+
     </application>
 
 </manifest>

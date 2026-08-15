@@ -47,6 +47,15 @@ jobs:
             echo "::warning ::SHEETS_CONFIG_JSON secret not set — Sheets upload will be disabled in this build."
           fi
 
+      - name: Write bordereau config
+        run: |
+          mkdir -p app/src/main/assets
+          if [ -n '${{ secrets.BORDEREAU_CONFIG_JSON }}' ]; then
+            echo '${{ secrets.BORDEREAU_CONFIG_JSON }}' > app/src/main/assets/bordereau_config.json
+          else
+            echo "::warning ::BORDEREAU_CONFIG_JSON secret not set — 'Vérifier bordereau' will be disabled in this build."
+          fi
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
 

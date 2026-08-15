@@ -18,6 +18,9 @@ class HomeActivity : AppCompatActivity() {
         findViewById<View>(R.id.card_facture).setOnClickListener {
             startActivity(Intent(this, FactureActivity::class.java))
         }
+        findViewById<View>(R.id.card_bordereau).setOnClickListener {
+            startActivity(Intent(this, BordereauActivity::class.java))
+        }
         val comingSoon = View.OnClickListener {
             Toast.makeText(this, R.string.coming_soon, Toast.LENGTH_SHORT).show()
         }
