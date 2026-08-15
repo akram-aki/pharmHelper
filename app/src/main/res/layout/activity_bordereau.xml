@@ -15,7 +15,7 @@
         app:titleTextColor="@android:color/white"
         app:navigationIconTint="@android:color/white" />
 
-    <!-- Filter bar: search by num_bord, then the état / dépôt state chips. -->
+    <!-- Filter bar: search by num_bord, then virée / non virée / tout. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -44,7 +44,8 @@
                 android:layout_height="wrap_content"
                 android:inputType="number"
                 android:imeOptions="actionSearch"
-                android:maxLines="1" />
+                android:maxLines="1"
+                android:textSize="17sp" />
 
         </com.google.android.material.textfield.TextInputLayout>
 
@@ -63,40 +64,29 @@
                 app:selectionRequired="true">
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chip_all"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:checked="true"
-                    android:text="@string/bordereau_filter_all" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chip_open"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/bordereau_status_open" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chip_todo"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/bordereau_status_todo" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chip_sent"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/bordereau_status_sent" />
-
-                <com.google.android.material.chip.Chip
                     android:id="@+id/chip_vire"
                     style="@style/Widget.MaterialComponents.Chip.Choice"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/bordereau_filter_vire" />
+                    android:checked="true"
+                    android:text="@string/bordereau_filter_vire"
+                    android:textSize="15sp" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_non_vire"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bordereau_filter_non_vire"
+                    android:textSize="15sp" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_all"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bordereau_filter_all"
+                    android:textSize="15sp" />
 
             </com.google.android.material.chip.ChipGroup>
 
@@ -108,7 +98,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
+            android:textSize="14sp" />
 
     </LinearLayout>
 
@@ -164,7 +154,7 @@
                 android:layout_marginTop="16dp"
                 android:textAlignment="center"
                 android:textColor="@color/text_secondary"
-                android:textSize="15sp" />
+                android:textSize="17sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_retry"
