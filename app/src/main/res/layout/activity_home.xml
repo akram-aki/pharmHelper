@@ -1,9 +1,92 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/home_background"
+    android:orientation="vertical">
+
+    <!-- CNAS alert: pinned above the scrolling content so it is the first thing
+         seen on opening the app. Hidden until a live alert exists. -->
+    <LinearLayout
+        android:id="@+id/cnas_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_alert_banner"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:contentDescription="@string/cnas_alert_title"
+                android:src="@drawable/ic_alert" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/cnas_banner_title"
+                android:textColor="@color/alert_red_text"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/cnas_banner_desc"
+            android:textColor="@color/alert_red_text"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/cnas_banner_message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/alert_red_text"
+            android:textSize="13sp"
+            tools:text="CNAS request rejected - HTTP 401 for bordereau 072026" />
+
+        <TextView
+            android:id="@+id/cnas_banner_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:alpha="0.75"
+            android:textColor="@color/alert_red_text"
+            android:textSize="12sp"
+            tools:text="15/08/2026 10:12 · DESKTOP-PHARMA" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/cnas_banner_dismiss"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="4dp"
+            android:text="@string/cnas_banner_dismiss"
+            android:textColor="@color/alert_red_text" />
+
+    </LinearLayout>
+
+<ScrollView
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
     android:fillViewport="true">
 
     <LinearLayout
@@ -248,3 +331,5 @@
     </LinearLayout>
 
 </ScrollView>
+
+</LinearLayout>
