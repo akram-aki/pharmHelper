@@ -68,6 +68,7 @@ class BordereauAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         private val numBord: TextView = view.findViewById(R.id.num_bord)
         private val centre: TextView = view.findViewById(R.id.code_centre)
         private val badge: TextView = view.findViewById(R.id.status_badge)
+        private val dateLabel: TextView = view.findViewById(R.id.date_label)
         private val depositDate: TextView = view.findViewById(R.id.deposit_date)
         private val amount: TextView = view.findViewById(R.id.mont_vir)
 
@@ -89,16 +90,27 @@ class BordereauAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             badge.backgroundTintList =
                 ColorStateList.valueOf(ContextCompat.getColor(context, backgroundColorRes))
 
-            // No deposit date means the bordereau never reached the FTP — say so
-            // rather than showing the 1900 sentinel the export ships.
+            // Show whichever date the Virée view actually files this bordereau
+            // under, labelled for what it is. An observed virement wins: it is
+            // the real payment date, where the dépôt is only a proxy. Neither
+            // present means the bordereau never reached the FTP — say so rather
+            // than showing the 1900 sentinel the export ships.
+            val virement = item.formatVirementDate()
             val deposited = item.formatDepositDate()
-            depositDate.text = deposited ?: context.getString(R.string.bordereau_not_deposited)
-            depositDate.setTextColor(
-                ContextCompat.getColor(
-                    context,
-                    if (deposited != null) R.color.text_primary else R.color.status_todo_text
+            val (dateLabelRes, dateValue, dateColorRes) = when {
+                virement != null ->
+                    Triple(R.string.bordereau_virement_label, virement, R.color.pharma_green_dark)
+                deposited != null ->
+                    Triple(R.string.bordereau_deposit_label, deposited, R.color.text_primary)
+                else -> Triple(
+                    R.string.bordereau_deposit_label,
+                    context.getString(R.string.bordereau_not_deposited),
+                    R.color.status_todo_text
                 )
-            )
+            }
+            dateLabel.setText(dateLabelRes)
+            depositDate.text = dateValue
+            depositDate.setTextColor(ContextCompat.getColor(context, dateColorRes))
 
             amount.text = context.getString(R.string.bordereau_amount, item.formatAmount())
             amount.setTextColor(

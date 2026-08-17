@@ -82,6 +82,7 @@
     <string name="bordereau_month_unknown">Sans date de dépôt</string>
     <string name="bordereau_centre">Centre %1$s</string>
     <string name="bordereau_deposit_label">Dépôt FTP</string>
+    <string name="bordereau_virement_label">Virement reçu</string>
     <string name="bordereau_amount_label">Virement</string>
     <string name="bordereau_amount">%1$s DA</string>
     <string name="bordereau_not_deposited">Non déposé</string>

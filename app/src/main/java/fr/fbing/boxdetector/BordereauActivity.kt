@@ -141,7 +141,12 @@ class BordereauActivity : AppCompatActivity() {
         }
 
         io.execute {
-            val result = runCatching { client.fetchAll() }
+            val result = runCatching {
+                // Stamping happens here, on the io thread, because it writes the
+                // log file — and it must run before the list is rendered so a
+                // virement that just landed is already dated on screen.
+                VirementLog.record(this, client.fetchAll(), System.currentTimeMillis())
+            }
             runOnUiThread {
                 loading = false
                 progress.visibility = View.GONE
@@ -209,12 +214,12 @@ class BordereauActivity : AppCompatActivity() {
      */
     private fun byMonth(visible: List<Bordereau>): List<BordereauAdapter.Row> {
         val rows = mutableListOf<BordereauAdapter.Row>()
-        visible.groupBy { it.depositMonth }
+        visible.groupBy { it.groupMonth }
             .entries
             // A null month sorts as "" — last, under descending order.
             .sortedByDescending { it.key ?: "" }
             .forEach { (month, group) ->
-                val ordered = group.sortedByDescending { it.depositedAt }
+                val ordered = group.sortedByDescending { it.groupDate }
                 rows += BordereauAdapter.Row.Header(
                     label = month?.let(BordereauFormat::monthLabel)
                         ?: getString(R.string.bordereau_month_unknown),

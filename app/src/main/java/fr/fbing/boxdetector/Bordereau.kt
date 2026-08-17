@@ -30,6 +30,16 @@ object BordereauFormat {
     /** "226 589,71" — grouped the way the CNAS paperwork writes amounts. */
     fun amount(value: Double): String = AMOUNT_FMT.format(value)
 
+    /**
+     * "2026-08" for [date]. Builds its own formatter because this one is called
+     * while parsing on a background thread, unlike the display formatters, which
+     * only ever run on the UI thread.
+     */
+    fun monthKey(date: Date): String = SimpleDateFormat("yyyy-MM", Locale.US).format(date)
+
+    /** "16/08/2026" — day precision, all an observed date is worth. */
+    fun dayLabel(date: Date): String = SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(date)
+
     /** "2026-08" → "Août 2026". Echoes the key if it cannot be parsed. */
     fun monthLabel(key: String): String = try {
         MONTH_LABEL_FMT.format(MONTH_KEY_FMT.parse(key)!!)
@@ -53,7 +63,13 @@ data class Bordereau(
     val codeCentre: String,
     val etat: String,
     val dateDepotFtp: String,
-    val montVir: String
+    val montVir: String,
+    /**
+     * Epoch millis of the moment this phone first saw [montVir] turn into a real
+     * amount, or null when the virement predates the log or hasn't happened.
+     * Filled in by [VirementLog] — the export itself carries no such date.
+     */
+    val firstSeenVireAt: Long? = null
 ) {
     /** The deposit instant, or null when the record still carries the sentinel. */
     val depositedAt: Date? = parseTimestamp(dateDepotFtp)
@@ -73,6 +89,21 @@ data class Bordereau(
      */
     val depositMonth: String? =
         if (depositedAt != null && dateDepotFtp.length >= 7) dateDepotFtp.substring(0, 7) else null
+
+    /** When the virement was first observed landing, or null. */
+    val virementSeenAt: Date? = firstSeenVireAt?.let { Date(it) }
+
+    /**
+     * The date the Virée view files this bordereau under. An observed virement
+     * wins over the dépôt: the dépôt is only a proxy for when the money moved,
+     * and a bordereau deposited in 2023 can be paid in 2026 — filing it under
+     * 2023 would bury exactly the payment the pharmacist is watching for.
+     */
+    val groupDate: Date? = virementSeenAt ?: depositedAt
+
+    /** "2026-08" for [groupDate]; null when neither date is known. */
+    val groupMonth: String? =
+        if (virementSeenAt != null) BordereauFormat.monthKey(virementSeenAt) else depositMonth
 
     /**
      * `num_bord` is "SSSSYY": a four-digit sequence followed by the two-digit
@@ -98,6 +129,9 @@ data class Bordereau(
 
     /** "03/08/2026 09:21", or null when the bordereau was never deposited. */
     fun formatDepositDate(): String? = depositedAt?.let { DISPLAY_FMT.format(it) }
+
+    /** "16/08/2026", or null when no virement has been observed landing. */
+    fun formatVirementDate(): String? = virementSeenAt?.let(BordereauFormat::dayLabel)
 
     /** Grouped amount, or the raw string when [montVir] is not a number. */
     fun formatAmount(): String = amount?.let(BordereauFormat::amount) ?: montVir
