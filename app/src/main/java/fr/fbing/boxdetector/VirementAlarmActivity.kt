@@ -37,7 +37,8 @@ class VirementAlarmActivity : AppCompatActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    /** singleTask, so a second alarm re-enters this instance rather than stacking. */
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         render()
     }
