@@ -7,26 +7,18 @@ import androidx.work.WorkerParameters
 import java.io.IOException
 
 /**
- * The app's one daily wake-up. It polls `/notifications` for CNAS alerts and
- * raises one notification per newly seen alert, then sweeps `/bordereau` so
- * [VirementLog] can date any virement that has just landed.
+ * Polls `/notifications` for CNAS alerts and raises one notification per newly
+ * seen alert. Scheduled daily by [CnasAlertMonitor.scheduleDailyCheck], and once
+ * more each time the app is opened via [CnasAlertMonitor.checkNow].
  *
- * The two checks share a worker deliberately: both need the network and both
- * want to run about once a day, so one wake-up costs the battery less than two.
- * Scheduled by [CnasAlertMonitor.scheduleDailyCheck], and run once more each
- * time the app is opened via [CnasAlertMonitor.checkNow].
+ * Deliberately alert-only. The virement sweep lives on its own 10:00 alarm
+ * ([VirementAlarmScheduler]) and must stay there: if this worker swept too, it
+ * would consume a newly paid bordereau before 10:00 and the alarm would never
+ * sound for it.
  */
 class CnasAlertWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
     override fun doWork(): Result {
-        val alertResult = checkAlerts()
-        // Independent of the alert check, and never allowed to fail the job: a
-        // missed sweep only costs precision on one virement's date.
-        sweepVirements()
-        return alertResult
-    }
-
-    private fun checkAlerts(): Result {
         val client = CnasAlertClient(applicationContext)
         if (!client.isConfigured()) {
             // Matches the upload workers: a build without the config asset stays
@@ -53,23 +45,6 @@ class CnasAlertWorker(context: Context, params: WorkerParameters) : Worker(conte
             CnasNotifications.show(applicationContext, fresh)
         }
         return Result.success()
-    }
-
-    /**
-     * Records today's `mont_vir` values so a virement that appears between two
-     * openings of the app still gets dated to the day it landed rather than to
-     * whenever the pharmacist next looks.
-     */
-    private fun sweepVirements() {
-        val client = BordereauClient(applicationContext)
-        if (!client.isConfigured()) return
-        try {
-            VirementLog.record(
-                applicationContext, client.fetchAll(), System.currentTimeMillis()
-            )
-        } catch (e: IOException) {
-            Log.w(TAG, "virement sweep failed: ${e.message}")
-        }
     }
 
     companion object {

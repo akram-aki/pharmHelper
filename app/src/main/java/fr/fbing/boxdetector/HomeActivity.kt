@@ -20,6 +20,9 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var bannerMessage: TextView
     private lateinit var bannerMeta: TextView
 
+    private lateinit var virementBanner: View
+    private lateinit var virementList: TextView
+
     private lateinit var io: ExecutorService
 
     private val notificationPermission = registerForActivityResult(
@@ -44,10 +47,18 @@ class HomeActivity : AppCompatActivity() {
         }
         findViewById<View>(R.id.card_more).setOnClickListener(comingSoon)
 
+        findViewById<View>(R.id.card_settings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
         banner = findViewById(R.id.cnas_banner)
         bannerMessage = findViewById(R.id.cnas_banner_message)
         bannerMeta = findViewById(R.id.cnas_banner_meta)
         findViewById<View>(R.id.cnas_banner_dismiss).setOnClickListener { dismissAlert() }
+
+        virementBanner = findViewById(R.id.virement_banner)
+        virementList = findViewById(R.id.virement_banner_list)
+        findViewById<View>(R.id.virement_banner_dismiss).setOnClickListener { dismissVirement() }
 
         io = Executors.newSingleThreadExecutor()
 
@@ -59,12 +70,46 @@ class HomeActivity : AppCompatActivity() {
         // reflects reality even when MIUI has starved the periodic job.
         CnasAlertMonitor.scheduleDailyCheck(this)
         CnasAlertMonitor.checkNow(this)
+
+        // The 10:00 virement check. Armed on every start because an update or a
+        // reboot MIUI didn't broadcast would otherwise leave it unscheduled, and
+        // arming is idempotent.
+        VirementAlarmScheduler.arm(this)
+
         askForNotifications()
     }
 
     override fun onResume() {
         super.onResume()
         refreshAlertBanner()
+        refreshVirementBanner()
+    }
+
+    /**
+     * Shows what the 10:00 alarm found and offers a way to silence it that does
+     * not go through a notification — which matters when POST_NOTIFICATIONS was
+     * refused, since then the alert notification never appears and its dismiss
+     * action is unreachable.
+     */
+    private fun refreshVirementBanner() {
+        if (io.isShutdown) return
+        io.execute {
+            val paid = VirementAlertStore.pending(this)
+            runOnUiThread {
+                if (paid.isEmpty()) {
+                    virementBanner.visibility = View.GONE
+                    return@runOnUiThread
+                }
+                virementList.text = VirementNotifications.summarise(this, paid)
+                virementBanner.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun dismissVirement() {
+        virementBanner.visibility = View.GONE
+        // Goes through the service so the sound stops too, if it is still going.
+        VirementAlarmService.dismiss(this)
     }
 
     /** Reads the cached alert off the worker's state file; no network here. */

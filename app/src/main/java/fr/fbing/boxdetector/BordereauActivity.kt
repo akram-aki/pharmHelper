@@ -145,7 +145,7 @@ class BordereauActivity : AppCompatActivity() {
                 // Stamping happens here, on the io thread, because it writes the
                 // log file — and it must run before the list is rendered so a
                 // virement that just landed is already dated on screen.
-                VirementLog.record(this, client.fetchAll(), System.currentTimeMillis())
+                VirementLog.record(this, client.fetchAll(), System.currentTimeMillis()).all
             }
             runOnUiThread {
                 loading = false

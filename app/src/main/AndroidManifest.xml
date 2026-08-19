@@ -6,12 +6,42 @@
     <!-- Android 13+ only; the CNAS alert falls back to the home banner if refused. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- The 10:00 virement alarm. USE_EXACT_ALARM (API 33+) is granted at
+         install; SCHEDULE_EXACT_ALARM covers 31–32, where it is user-revocable.
+         Losing the grant costs both the exact time *and* the right to start the
+         check service from the background, so VirementAlarmScheduler checks it.
+         Note USE_EXACT_ALARM is Play-restricted to clock/calendar apps — fine
+         here because the app ships through Firebase App Distribution, but it
+         would need revisiting before any Play release. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Keeps the CPU alive while the tone loops. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Shows the alert over the lockscreen. Auto-granted below Android 14; from
+         14 the user must allow it, and VirementNotifications reports whether
+         they have. Without it the alert degrades to a heads-up notification. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <uses-feature
         android:name="android.hardware.camera"
         android:required="true" />
     <uses-feature
         android:name="android.hardware.camera.autofocus"
         android:required="false" />
+
+    <!-- targetSdk 30+ hides other packages; without this the ringtone picker
+         cannot be resolved on some builds. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.RINGTONE_PICKER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="false"
@@ -54,6 +84,51 @@
             android:exported="false"
             android:parentActivityName=".HomeActivity"
             android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:parentActivityName=".HomeActivity"
+            android:screenOrientation="portrait" />
+
+        <!-- The alarm screen. Its own task so dismissing it doesn't disturb
+             whatever the pharmacist was doing, and singleTask so a second alarm
+             updates the existing screen rather than stacking another. -->
+        <activity
+            android:name=".VirementAlarmActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:showWhenLocked="true"
+            android:taskAffinity=".virement_alarm"
+            android:turnScreenOn="true" />
+
+        <!-- mediaPlayback: there is no "alarm" foreground-service type, and
+             mediaPlayback is the only one with no runtime prerequisite that can
+             be started from the background. -->
+        <service
+            android:name=".VirementAlarmService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Reached only by an explicit PendingIntent, so unexported. -->
+        <receiver
+            android:name=".VirementAlarmReceiver"
+            android:exported="false" />
+
+        <!-- Exported because the system delivers these broadcasts. -->
+        <receiver
+            android:name=".VirementBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

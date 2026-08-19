@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pale green card behind the new-virement banner on the home screen. Green,
+     not red: a payment arriving is good news, unlike the CNAS alert it sits
+     beside. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="12dp" />
+    <solid android:color="@color/pharma_green_light" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/pharma_green" />
+</shape>

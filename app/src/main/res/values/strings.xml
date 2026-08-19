@@ -102,4 +102,39 @@
     <string name="cnas_alert_body">Le code CNAS du jour a été refusé — la vérification automatique des paiements est arrêtée.\n\n%1$s</string>
     <string name="cnas_channel_name">Alertes CNAS</string>
     <string name="cnas_channel_desc">Prévient quand le PC n\'arrive plus à interroger CNAS</string>
+
+    <!-- Alarme nouveau virement : vérification quotidienne à 10:00 -->
+    <string name="service_settings_title">Paramètres</string>
+    <string name="service_settings_desc">Son de l\'alarme et vérification à 10:00</string>
+    <string name="virement_channel_check_name">Vérification des virements</string>
+    <string name="virement_channel_check_desc">Notification discrète pendant la vérification quotidienne de 10:00.</string>
+    <string name="virement_channel_alert_name">Nouveau virement</string>
+    <string name="virement_channel_alert_desc">Alerte sonore quand la CNAS a payé un bordereau.</string>
+    <string name="virement_checking">Vérification des virements…</string>
+    <string name="virement_alert_subtitle">La CNAS a payé.</string>
+    <string name="virement_alert_line">%1$s · %2$s DA</string>
+    <string name="virement_dismiss">J\'ai vu</string>
+    <string name="virement_open_list">Voir les bordereaux</string>
+    <string name="virement_banner_title">Nouveau virement reçu</string>
+    <string name="virement_banner_dismiss">J\'ai vu</string>
+    <string name="settings_sound_title">Son de l\'alarme</string>
+    <string name="settings_sound_desc">Joué en boucle quand un nouveau virement est détecté à 10:00, sur le volume alarme — audible même en silencieux.</string>
+    <string name="settings_sound_default">Alarme par défaut</string>
+    <string name="settings_pick_sound">Choisir une sonnerie</string>
+    <string name="settings_sound_unreadable">Cette sonnerie est illisible — l\'alarme par défaut sera utilisée</string>
+    <string name="settings_permissions_title">L\'alarme peut-elle fonctionner ?</string>
+    <string name="settings_exact_ok">Alarme à 10:00 précise : autorisée</string>
+    <string name="settings_exact_missing">Alarme à 10:00 précise : refusée — l\'heure sera approximative</string>
+    <string name="settings_fullscreen_ok">Écran d\'alerte : autorisé</string>
+    <string name="settings_fullscreen_missing">Écran d\'alerte : refusé — seule une notification apparaîtra</string>
+    <string name="settings_grant">Autoriser</string>
+    <string name="settings_no_screen">Écran de réglages introuvable sur ce téléphone</string>
+    <string name="settings_miui_warning">Sur Xiaomi/Redmi, activez aussi « Démarrage auto », « Afficher les fenêtres en arrière-plan » et « Afficher sur l\'écran de verrouillage » dans les réglages de l\'application, sinon l\'alarme ne se déclenchera pas.</string>
+    <string name="settings_test">Vérifier maintenant</string>
+    <string name="settings_test_started">Vérification lancée…</string>
+
+    <plurals name="virement_alert_title">
+        <item quantity="one">Nouveau virement</item>
+        <item quantity="other">%1$d nouveaux virements</item>
+    </plurals>
 </resources>
