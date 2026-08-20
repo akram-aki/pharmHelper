@@ -17,6 +17,8 @@ import java.util.concurrent.Executors
 class HomeActivity : AppCompatActivity() {
 
     private lateinit var banner: View
+    private lateinit var bannerTitle: TextView
+    private lateinit var bannerDesc: TextView
     private lateinit var bannerMessage: TextView
     private lateinit var bannerMeta: TextView
 
@@ -52,6 +54,8 @@ class HomeActivity : AppCompatActivity() {
         }
 
         banner = findViewById(R.id.cnas_banner)
+        bannerTitle = findViewById(R.id.cnas_banner_title)
+        bannerDesc = findViewById(R.id.cnas_banner_desc)
         bannerMessage = findViewById(R.id.cnas_banner_message)
         bannerMeta = findViewById(R.id.cnas_banner_meta)
         findViewById<View>(R.id.cnas_banner_dismiss).setOnClickListener { dismissAlert() }
@@ -122,6 +126,8 @@ class HomeActivity : AppCompatActivity() {
                     banner.visibility = View.GONE
                     return@runOnUiThread
                 }
+                bannerTitle.setText(alert.kindOf.titleRes)
+                bannerDesc.setText(alert.kindOf.descRes)
                 bannerMessage.text = alert.message
                 bannerMeta.text = getString(R.string.cnas_banner_meta, alert.formatAt(), alert.host)
                 bannerMeta.visibility =

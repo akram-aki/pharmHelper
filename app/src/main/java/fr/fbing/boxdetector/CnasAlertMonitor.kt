@@ -78,15 +78,24 @@ object CnasAlertMonitor {
         if (isNew) state.put(KEY_NOTIFIED, newest.key)
         writeState(context, state)
 
-        return if (isNew) newest else null
+        // A recovery record is still recorded as the latest — which is what makes
+        // the banner stand down, since the banner reads the latest state — but it
+        // must never raise a notification.
+        return if (isNew && newest.isAlerting) newest else null
     }
 
-    /** The newest alert the pharmacist hasn't dismissed yet, or null. */
+    /**
+     * The newest alert the pharmacist hasn't dismissed yet, or null.
+     *
+     * Null also when the newest record is a recovery: the PC reporting a
+     * successful check is exactly the signal that the problem is over, so the
+     * banner clears itself without anyone having to tap anything.
+     */
     fun latestUnacknowledged(context: Context): CnasAlert? = synchronized(lock) {
         val state = readState(context)
         val latest = state.optJSONObject(KEY_LATEST) ?: return null
         val alert = CnasAlert.fromJson(latest)
-        if (alert.key.isEmpty()) return null
+        if (alert.key.isEmpty() || !alert.isAlerting) return null
         val acked = state.optString(KEY_ACKED)
         return if (acked.isEmpty() || alert.key > acked) alert else null
     }

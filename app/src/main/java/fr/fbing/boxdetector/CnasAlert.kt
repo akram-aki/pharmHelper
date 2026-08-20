@@ -8,11 +8,12 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * One alert written by the pharmacy PC under `/notifications/<pushKey>`.
+ * One record written by the pharmacy PC under `/notifications/<pushKey>`.
  *
- * The PC's daily task (`CHIFA_DailyCheck`) appends a record whenever CNAS
- * rejects the rotating daily code — HTTP 401/403 — meaning the automated
- * payment check has stopped working and someone has to fix the code.
+ * The PC's daily task (`CHIFA_DailyCheck`) appends a record whenever the check
+ * hits a problem — a rejected daily code, a failed request, or the script
+ * crashing. See [CnasAlertKind]; the set is open, so a record whose `kind` this
+ * build has never seen is still surfaced rather than dropped.
  *
  * Records are append-only and rare: for long stretches there are none at all,
  * and the node may not exist. That is the healthy state, not an error.
@@ -25,6 +26,12 @@ data class CnasAlert(
     val at: String,
     val host: String
 ) {
+
+    /** The raw [kind] resolved to something the UI can branch on. */
+    val kindOf: CnasAlertKind get() = CnasAlertKind.of(kind)
+
+    /** False only for a recovery record, which reports success, not a problem. */
+    val isAlerting: Boolean get() = kindOf.alerting
 
     /** "15/08/2026 10:12" — the PC's wall clock; the raw string if unparseable. */
     fun formatAt(): String {
@@ -46,9 +53,6 @@ data class CnasAlert(
         .put("host", host)
 
     companion object {
-        /** The only kind the app reacts to; others are ignored by design. */
-        const val KIND_AUTH_FAILED = "cnas_auth_failed"
-
         private val DISPLAY_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale.FRANCE)
 
         fun fromJson(json: JSONObject): CnasAlert = CnasAlert(
@@ -60,8 +64,11 @@ data class CnasAlert(
         )
 
         /**
-         * Parses the `/notifications` node, keeping only [KIND_AUTH_FAILED]
-         * records and sorting them oldest-first by push key.
+         * Parses the `/notifications` node, sorted oldest-first by push key.
+         *
+         * Every record is kept, whatever its `kind` — filtering here is what
+         * would make a newly-added kind disappear silently. Selecting which ones
+         * deserve a notification is [CnasAlertKind]'s job, downstream.
          *
          * An absent node comes back as the literal `null` and yields an empty
          * list — the normal state when the PC has never failed. Both the object
@@ -85,9 +92,7 @@ data class CnasAlert(
                         .toList()
                 }
             }
-            return parsed
-                .filter { it.kind == KIND_AUTH_FAILED }
-                .sortedBy { it.key }
+            return parsed.sortedBy { it.key }
         }
 
         private fun fromNode(key: String, json: JSONObject) = CnasAlert(

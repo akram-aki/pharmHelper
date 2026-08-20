@@ -93,15 +93,24 @@
     <string name="bordereau_not_configured">Accès à la base non configuré — bordereau_config.json manquant</string>
     <string name="bordereau_retry">Réessayer</string>
 
-    <!-- Alerte CNAS : le PC signale que le code du jour a été refusé -->
-    <string name="cnas_alert_title">Problème de code CNAS</string>
-    <string name="cnas_banner_title">Le contrôle CNAS est en panne</string>
-    <string name="cnas_banner_desc">Le code du jour a été refusé — la vérification automatique des paiements est arrêtée. Corrigez le code sur le PC.</string>
+    <!-- Alertes CNAS : le PC signale un problème lors du contrôle quotidien.
+         Un titre et une explication par « kind » ; tout kind inconnu retombe sur
+         cnas_kind_unknown_* plutôt que d\'être ignoré. -->
+    <string name="cnas_kind_auth_title">Code CNAS refusé</string>
+    <string name="cnas_kind_auth_desc">Le code du jour a été refusé — la vérification automatique des paiements est arrêtée. Corrigez le code sur le PC.</string>
+    <string name="cnas_kind_error_title">Requête CNAS échouée</string>
+    <string name="cnas_kind_error_desc">Le PC n\'a pas pu interroger CNAS — erreur réseau ou serveur. Le contrôle des paiements n\'a pas abouti.</string>
+    <string name="cnas_kind_script_title">Erreur du script CNAS</string>
+    <string name="cnas_kind_script_desc">Le script de vérification a planté sur le PC. Aucun paiement n\'a été contrôlé.</string>
+    <string name="cnas_kind_ok_title">Contrôle CNAS rétabli</string>
+    <string name="cnas_kind_ok_desc">Le PC a réussi son dernier contrôle — plus rien à corriger.</string>
+    <string name="cnas_kind_unknown_title">Alerte CNAS</string>
+    <string name="cnas_kind_unknown_desc">Le PC a signalé un problème lors du contrôle des paiements.</string>
     <string name="cnas_banner_meta">%1$s · %2$s</string>
     <string name="cnas_banner_dismiss">J\'ai corrigé</string>
-    <string name="cnas_alert_body">Le code CNAS du jour a été refusé — la vérification automatique des paiements est arrêtée.\n\n%1$s</string>
+    <string name="cnas_alert_body">%1$s\n\n%2$s</string>
     <string name="cnas_channel_name">Alertes CNAS</string>
-    <string name="cnas_channel_desc">Prévient quand le PC n\'arrive plus à interroger CNAS</string>
+    <string name="cnas_channel_desc">Prévient quand le contrôle CNAS du PC échoue</string>
 
     <!-- Alarme nouveau virement : vérification quotidienne à 10:00 -->
     <string name="service_settings_title">Paramètres</string>

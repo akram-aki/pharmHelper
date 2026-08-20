@@ -42,10 +42,16 @@ object CnasNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val body = context.getString(R.string.cnas_alert_body, alert.message)
+        // Title and explanation come from the kind, so cnas_error and
+        // cnas_script_error don't both masquerade as a rejected code.
+        val body = context.getString(
+            R.string.cnas_alert_body,
+            context.getString(alert.kindOf.descRes),
+            alert.message
+        )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_alert_notification)
-            .setContentTitle(context.getString(R.string.cnas_alert_title))
+            .setContentTitle(context.getString(alert.kindOf.titleRes))
             .setContentText(alert.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)

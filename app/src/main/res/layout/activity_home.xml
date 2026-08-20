@@ -30,27 +30,31 @@
             <ImageView
                 android:layout_width="26dp"
                 android:layout_height="26dp"
-                android:contentDescription="@string/cnas_alert_title"
+                android:contentDescription="@string/cnas_kind_unknown_title"
                 android:src="@drawable/ic_alert" />
 
+            <!-- Title and description are set from the record's kind, so a
+                 failed request doesn't read as a rejected code. -->
             <TextView
+                android:id="@+id/cnas_banner_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
-                android:text="@string/cnas_banner_title"
                 android:textColor="@color/alert_red_text"
                 android:textSize="18sp"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                tools:text="Code CNAS refusé" />
 
         </LinearLayout>
 
         <TextView
+            android:id="@+id/cnas_banner_desc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="@string/cnas_banner_desc"
             android:textColor="@color/alert_red_text"
-            android:textSize="15sp" />
+            android:textSize="15sp"
+            tools:text="Le code du jour a été refusé — corrigez-le sur le PC." />
 
         <TextView
             android:id="@+id/cnas_banner_message"
